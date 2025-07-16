@@ -96,6 +96,87 @@ def write_markdown_file(output_file, topic, base_url, month_links):
     return total_articles, filtered_articles
 
 
+def load_existing_months(output_dir):
+    """Load existing months from a tracking file to avoid reprocessing."""
+    tracking_file = os.path.join(output_dir, '.processed_months.txt')
+    
+    if not os.path.exists(tracking_file):
+        return set()
+    
+    existing_months = set()
+    try:
+        with open(tracking_file, 'r', encoding='utf-8') as f:
+            existing_months = set(line.strip() for line in f if line.strip())
+    except Exception as e:
+        print(f"Warning: Could not read tracking file {tracking_file}: {e}")
+    
+    return existing_months
+
+
+def save_processed_month(output_dir, month):
+    """Save a processed month to the tracking file."""
+    tracking_file = os.path.join(output_dir, '.processed_months.txt')
+    os.makedirs(output_dir, exist_ok=True)
+    
+    try:
+        with open(tracking_file, 'a', encoding='utf-8') as f:
+            f.write(f"{month}\n")
+    except Exception as e:
+        print(f"Warning: Could not save to tracking file {tracking_file}: {e}")
+
+
+def append_new_months_to_file(output_file, topic, base_url, output_dir, new_month_links):
+    """Append only new months to the existing markdown file."""
+    total_articles = 0
+    filtered_articles = 0
+    
+    # If file doesn't exist, create it with header
+    if not os.path.exists(output_file):
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(f'## {topic} (MySQL/InnoDB Focus)\n\n')
+    
+    # Append new months
+    with open(output_file, 'a', encoding='utf-8') as f:
+        for month in new_month_links:
+            # Fetch monthly page content
+            month_url = base_url + month
+            try:
+                month_content = fetch_page_content(month_url)
+                all_article_links = extract_article_links(month_content)
+                
+                total_articles += len(all_article_links)
+                
+                # Filter articles based on title
+                filtered_article_links = [
+                    (link, title) for link, title in all_article_links
+                    if should_include_article(title)
+                ]
+                
+                filtered_articles += len(filtered_article_links)
+                
+                # Write month section if there are filtered articles
+                if filtered_article_links:
+                    f.write(f'### {month}\n')
+                    f.write('---\n\n')
+                    
+                    # Write each article as a bullet point on its own line
+                    for article_link, article_title in filtered_article_links:
+                        full_link = base_url + article_link
+                        f.write(f'- [{article_title}]({full_link})\n')
+                    
+                    f.write('\n')
+                
+                # Always log that we processed this month and save to tracking
+                print(f"  Processed {month}: {len(filtered_article_links)} MySQL/InnoDB articles")
+                save_processed_month(output_dir, month)
+                
+            except Exception as e:
+                print(f"  Warning: Could not process {month}: {e}")
+    
+    return total_articles, filtered_articles
+
+
 # Test function to verify filtering logic
 def test_filtering():
     """Test the filtering logic with sample titles."""
@@ -124,7 +205,7 @@ def test_filtering():
 
 
 def main():
-    """Main function to crawl Alibaba MySQL monthly reports."""
+    """Main function to crawl Alibaba MySQL monthly reports with incremental updates."""
     base_url = 'http://mysql.taobao.org/monthly/'
     output_dir = 'ali_monthly'
     output_file = os.path.join(output_dir, '阿里数据库内核月报.md')
@@ -132,17 +213,34 @@ def main():
     # Fetch main page and extract data
     main_content = fetch_page_content(base_url)
     topic = extract_topic(main_content)
-    month_links = extract_month_links(main_content)
+    all_month_links = extract_month_links(main_content)
     
-    # Generate markdown file with filtering
-    total_articles, filtered_articles = write_markdown_file(output_file, topic, base_url, month_links)
+    # Load existing months to avoid reprocessing
+    existing_months = load_existing_months(output_dir)
+    print(f"Found {len(existing_months)} existing months in tracking file")
+    if existing_months:
+        print(f"Existing months (first 5): {', '.join(list(existing_months)[:5])}")
     
-    print(f"Successfully crawled {len(month_links)} monthly reports")
-    print(f"Total articles found: {total_articles}")
-    print(f"MySQL/InnoDB focused articles: {filtered_articles}")
-    print(f"Articles excluded (PolarDB/MariaDB/MyRocks/X-Engine/行业动态/Other): {total_articles - filtered_articles}")
-    print(f"Filtering efficiency: {(total_articles - filtered_articles) / total_articles * 100:.1f}% excluded")
-    print(f"Output saved to: {output_file}")
+    new_month_links = [month for month in all_month_links if month not in existing_months]
+    
+    if not new_month_links:
+        print(f"No new monthly reports found. All {len(all_month_links)} reports are already processed.")
+        print(f"Existing file: {output_file}")
+        return
+    
+    print(f"Found {len(new_month_links)} new monthly reports out of {len(all_month_links)} total")
+    print(f"New months to process: {', '.join(new_month_links[:5])}{'...' if len(new_month_links) > 5 else ''}")
+    
+    # Process only new months
+    total_articles, filtered_articles = append_new_months_to_file(output_file, topic, base_url, output_dir, new_month_links)
+    
+    print(f"Successfully processed {len(new_month_links)} new monthly reports")
+    print(f"New articles found: {total_articles}")
+    print(f"New MySQL/InnoDB focused articles: {filtered_articles}")
+    print(f"New articles excluded: {total_articles - filtered_articles}")
+    if total_articles > 0:
+        print(f"Filtering efficiency: {(total_articles - filtered_articles) / total_articles * 100:.1f}% excluded")
+    print(f"Output updated: {output_file}")
 
 
 if __name__ == "__main__":
