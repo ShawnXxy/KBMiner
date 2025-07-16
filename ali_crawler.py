@@ -3,6 +3,8 @@ import os
 import re
 import urllib.request
 import sys
+import hashlib
+from urllib.parse import urljoin, urlparse
 
 
 def fetch_page_content(url):
@@ -195,7 +197,7 @@ def sanitize_filename(filename):
     return filename
 
 
-def extract_article_content(url):
+def extract_article_content(url, img_dir=None):
     """Extract the main content from an article page."""
     try:
         content = fetch_page_content(url)
@@ -222,15 +224,20 @@ def extract_article_content(url):
                 if body_match:
                     article_html = body_match.group(1)
                 else:
-                    return "Could not extract article content."
+                    return "Could not extract article content.", 0
+        
+        # Download images if img_dir is provided
+        images_downloaded = 0
+        if img_dir:
+            article_html, images_downloaded = extract_and_download_images(article_html, img_dir, url)
         
         # Convert HTML to markdown-like format
         article_content = html_to_markdown(article_html)
         
-        return article_content
+        return article_content, images_downloaded
         
     except Exception as e:
-        return f"Error fetching article content: {e}"
+        return f"Error fetching article content: {e}", 0
 
 
 def html_to_markdown(html_content):
@@ -274,8 +281,9 @@ def html_to_markdown(html_content):
     # Convert links
     content = re.sub(r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>', r'[\2](\1)', content, flags=re.S | re.I)
     
-    # Convert images
+    # Convert images (this needs to be before removing HTML tags)
     content = re.sub(r'<img[^>]*src=["\']([^"\']*)["\'][^>]*alt=["\']([^"\']*)["\'][^>]*/?>', r'![\2](\1)', content, flags=re.I)
+    content = re.sub(r'<img[^>]*alt=["\']([^"\']*)["\'][^>]*src=["\']([^"\']*)["\'][^>]*/?>', r'![\1](\2)', content, flags=re.I)
     content = re.sub(r'<img[^>]*src=["\']([^"\']*)["\'][^>]*/?>', r'![](\1)', content, flags=re.I)
     
     # Remove remaining HTML tags
@@ -312,9 +320,12 @@ def convert_list(list_content, marker):
 def save_individual_articles(base_url, month_links, output_dir):
     """Download and save individual articles as separate markdown files."""
     articles_dir = os.path.join(output_dir, 'articles')
+    img_dir = os.path.join(articles_dir, '.img')
     os.makedirs(articles_dir, exist_ok=True)
+    os.makedirs(img_dir, exist_ok=True)
     
     total_saved = 0
+    total_images = 0
     
     for month in month_links:
         print(f"Processing articles for {month}...")
@@ -336,27 +347,123 @@ def save_individual_articles(base_url, month_links, output_dir):
                     print(f"  Skipping {filename} (already exists)")
                     continue
                 
-                # Fetch article content
+                # Fetch article content with image downloading
                 full_article_url = base_url + article_link
                 print(f"  Downloading: {article_title}")
                 
-                article_content = extract_article_content(full_article_url)
+                article_content, images_downloaded = extract_article_content(full_article_url, img_dir)
+                total_images += images_downloaded
                 
                 # Create markdown file with metadata
                 with open(filepath, 'w', encoding='utf-8') as f:
                     f.write(f"# {article_title}\n\n")
                     f.write(f"**Date:** {month}\n")
-                    f.write(f"**Source:** {full_article_url}\n\n")
-                    f.write("---\n\n")
+                    f.write(f"**Source:** {full_article_url}\n")
+                    if images_downloaded > 0:
+                        f.write(f"**Images:** {images_downloaded} images downloaded\n")
+                    f.write("\n---\n\n")
                     f.write(article_content)
                 
                 total_saved += 1
-                print(f"  ✓ Saved: {filename}")
+                if images_downloaded > 0:
+                    print(f"  ✓ Saved: {filename} (with {images_downloaded} images)")
+                else:
+                    print(f"  ✓ Saved: {filename}")
                 
         except Exception as e:
             print(f"  Error processing {month}: {e}")
     
+    print("\n📊 Download Summary:")
+    print(f"  Articles saved: {total_saved}")
+    print(f"  Images downloaded: {total_images}")
+    if total_images > 0:
+        print(f"  Images saved to: {img_dir}")
+    
     return total_saved
+
+
+def download_image(image_url, img_dir, base_url):
+    """Download an image and return the local file path."""
+    try:
+        # Handle relative URLs
+        if image_url.startswith('//'):
+            image_url = 'http:' + image_url
+        elif image_url.startswith('/'):
+            image_url = urljoin(base_url, image_url)
+        elif not image_url.startswith(('http://', 'https://')):
+            image_url = urljoin(base_url, image_url)
+        
+        # Generate a unique filename based on URL hash
+        url_hash = hashlib.md5(image_url.encode()).hexdigest()[:12]
+        parsed_url = urlparse(image_url)
+        original_name = os.path.basename(parsed_url.path)
+        
+        # Determine file extension
+        if not original_name or '.' not in original_name:
+            # Try to get extension from URL or default to .png
+            ext = '.png'
+        else:
+            ext = os.path.splitext(original_name)[1]
+            if not ext:
+                ext = '.png'
+        
+        # Create unique filename
+        local_filename = f"{url_hash}_{original_name}" if original_name else f"{url_hash}{ext}"
+        local_filepath = os.path.join(img_dir, local_filename)
+        
+        # Skip if file already exists
+        if os.path.exists(local_filepath):
+            return local_filename
+        
+        # Download the image
+        print(f"    Downloading image: {image_url}")
+        response = urllib.request.urlopen(image_url)
+        
+        # Save the image
+        with open(local_filepath, 'wb') as f:
+            f.write(response.read())
+        
+        print(f"    ✓ Saved image: {local_filename}")
+        return local_filename
+        
+    except Exception as e:
+        print(f"    ✗ Failed to download image {image_url}: {e}")
+        return None
+
+
+def extract_and_download_images(html_content, img_dir, base_url):
+    """Extract images from HTML and download them, returning updated HTML with local paths."""
+    # Ensure image directory exists
+    os.makedirs(img_dir, exist_ok=True)
+    
+    # Find all image tags
+    img_pattern = re.compile(r'<img[^>]*src=["\']([^"\']*)["\'][^>]*/?>', re.I)
+    images = img_pattern.findall(html_content)
+    
+    updated_content = html_content
+    image_downloads = {}
+    
+    for image_url in images:
+        # Skip data URLs and empty sources
+        if image_url.startswith('data:') or not image_url.strip():
+            continue
+            
+        # Download the image
+        local_filename = download_image(image_url, img_dir, base_url)
+        
+        if local_filename:
+            # Store the mapping for later replacement
+            image_downloads[image_url] = local_filename
+    
+    # Replace image URLs in HTML with local paths
+    for original_url, local_filename in image_downloads.items():
+        # Create relative path to image
+        local_path = f".img/{local_filename}"
+        # Replace the src attribute
+        updated_content = updated_content.replace(f'src="{original_url}"', f'src="{local_path}"')
+        updated_content = updated_content.replace(f"src='{original_url}'", f"src='{local_path}'")
+    
+    return updated_content, len(image_downloads)
 
 
 # Test function to verify filtering logic
@@ -396,7 +503,7 @@ Usage:
 
 Options:
     (no options)        Run normal crawler to update monthly report summary
-    --download-articles Download ALL individual articles (may take a long time)
+    --download-articles Download ALL individual articles with images (may take a long time)
     --test-articles     Download a few sample articles for testing
     --test              Run filtering logic tests
 
@@ -404,6 +511,7 @@ Features:
     ✓ Incremental updates - only processes new months
     ✓ MySQL/InnoDB content filtering with keyword exclusions
     ✓ Individual article download with full content
+    ✓ Automatic image downloading and local referencing
     ✓ Automatic file naming: {month}_{title}.md
     ✓ Progress tracking and error handling
 
@@ -412,14 +520,25 @@ Output Structure:
     ├── 阿里数据库内核月报.md          # Summary with all article links
     ├── .processed_months.txt          # Tracking file for incremental updates
     └── articles/                      # Individual article contents
+        ├── .img/                      # Downloaded images
+        │   ├── abc123_diagram1.png
+        │   ├── def456_chart2.jpg
+        │   └── ...
         ├── 2025-05_MySQL无锁哈希表LF_HASH.md
         ├── 2024-12_MySQL优化器代码速览.md
         └── ...
 
+Image Handling:
+    ✓ Automatic image detection and download
+    ✓ Unique filename generation (hash + original name)
+    ✓ Local path references in markdown files
+    ✓ Support for various image formats (png, jpg, gif, etc.)
+    ✓ Handles both absolute and relative image URLs
+
 Examples:
     python ali_crawler.py                  # Update summary only
-    python ali_crawler.py --test-articles  # Download a few test articles
-    python ali_crawler.py --download-articles  # Download all articles (453 files)
+    python ali_crawler.py --test-articles  # Download test articles with images
+    python ali_crawler.py --download-articles  # Download all articles with images
     """
     print(help_text)
 
@@ -486,15 +605,42 @@ def main():
 
 def main_test_articles():
     """Test function to download a few articles for testing."""
-    base_url = 'http://mysql.taobao.org/monthly/'
     output_dir = 'ali_monthly'
     
     # Test with just a few recent months
     test_months = ['2025/05', '2024/12']
     
     print("Testing article download with recent months...")
-    saved_count = save_individual_articles(base_url, test_months, output_dir)
+    saved_count = save_individual_articles('http://mysql.taobao.org/monthly/', test_months, output_dir)
     print(f"✓ Test completed. Saved {saved_count} individual articles")
+
+
+def debug_extract_article_with_images():
+    """Debug function to test article extraction with image handling."""
+    
+    output_dir = 'ali_monthly'
+    articles_dir = os.path.join(output_dir, 'articles')
+    img_dir = os.path.join(articles_dir, '.img')
+    
+    # Test with a specific article that might have images
+    test_url = 'http://mysql.taobao.org/monthly/2025/05/02/'
+    
+    print(f"Testing image extraction from: {test_url}")
+    
+    os.makedirs(img_dir, exist_ok=True)
+    
+    # Extract content with image downloading
+    article_content, images_downloaded = extract_article_content(test_url, img_dir)
+    
+    print(f"Images downloaded: {images_downloaded}")
+    
+    # Check for image references in the content
+    img_refs = re.findall(r'!\[.*?\]\([^)]+\)', article_content)
+    print(f"Image references found in markdown: {len(img_refs)}")
+    for ref in img_refs[:5]:  # Show first 5
+        print(f"  {ref}")
+    
+    return article_content, images_downloaded
 
 
 if __name__ == "__main__":
@@ -502,8 +648,14 @@ if __name__ == "__main__":
     download_all_articles = '--download-articles' in sys.argv
     test_articles = '--test-articles' in sys.argv
     run_tests = '--test' in sys.argv
+    debug_images = '--debug-images' in sys.argv
+    show_help = '--help' in sys.argv or '-h' in sys.argv
     
-    if run_tests:
+    if show_help:
+        print_help()
+    elif debug_images:
+        debug_extract_article_with_images()
+    elif run_tests:
         test_filtering()
     elif test_articles:
         main_test_articles()
@@ -519,4 +671,4 @@ if __name__ == "__main__":
         saved_count = save_individual_articles(base_url, all_month_links, output_dir)
         print(f"✓ Successfully saved {saved_count} individual articles")
     else:
-        print_help()
+        main()

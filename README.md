@@ -7,6 +7,7 @@ A powerful Python crawler for building a comprehensive MySQL knowledge base from
 - **Incremental Updates**: Only processes new monthly reports, avoiding redundant work
 - **Smart Content Filtering**: Focuses on MySQL/InnoDB content while excluding other database technologies
 - **Individual Article Download**: Extracts full content from each article and saves as separate markdown files
+- **Automatic Image Management**: Downloads all images and creates local references in markdown files
 - **Progress Tracking**: Maintains processing state for reliable resumption after interruptions
 - **Clean Output**: Well-organized markdown files with proper formatting and metadata
 
@@ -17,11 +18,28 @@ ali_monthly/
 ├── 阿里数据库内核月报.md          # Summary with all article links
 ├── .processed_months.txt          # Tracking file for incremental updates
 └── articles/                      # Individual article contents
+    ├── .img/                      # Downloaded images (shared folder)
+    │   ├── db2d90cc428f_optimizer_logical_arch.png (2.4MB)
+    │   ├── 34ba0cd650e7_optimizer_code_arch.png (368KB)
+    │   ├── 432b9559c8ae_Query_expression.png (312KB)
+    │   └── ... (all images with unique naming)
     ├── 2025-05_MySQL无锁哈希表LF_HASH.md
-    ├── 2024-12_MySQL优化器代码速览.md
+    ├── 2024-12_MySQL优化器代码速览.md (with 6 images)
     ├── 2024-12_MySQL查询优化分析-常见慢查问题与优化方法.md
     └── ... (453 total articles)
 ```
+
+## 🖼️ Image Management
+
+The crawler automatically handles images with advanced features:
+
+- **Automatic Detection**: Finds all images in article HTML content
+- **Smart Download**: Downloads images to a shared `.img` folder under articles
+- **Unique Naming**: Uses URL hash + original filename to prevent conflicts
+- **Local References**: Updates markdown to use relative paths (`![description](.img/filename.png)`)
+- **Format Support**: Handles PNG, JPG, GIF, and other web image formats
+- **Size Optimization**: Preserves original image quality and dimensions
+- **Deduplication**: Skips re-downloading existing images
 
 ## 🚀 Usage
 
@@ -86,8 +104,10 @@ This ensures your knowledge base stays focused on core MySQL technologies.
 Each downloaded article includes:
 - **Title**: Original article title
 - **Metadata**: Publication date and source URL
+- **Image Count**: Number of images downloaded for the article
 - **Content**: Full article text converted to markdown
-- **Formatting**: Clean, readable markdown structure
+- **Local Images**: All images downloaded and referenced with local paths
+- **Formatting**: Clean, readable markdown structure with preserved diagrams
 
 ## 🔄 Automation Ready
 
