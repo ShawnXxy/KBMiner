@@ -145,10 +145,8 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-*.md
-!README.md
 aikesheng/
-ali_monthly/
 logs/
 temp/
 cache/
+ali_monthly/.processed_months.txt
