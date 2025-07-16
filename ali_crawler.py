@@ -2,6 +2,7 @@
 import os
 import re
 import urllib.request
+import sys
 
 
 def fetch_page_content(url):
@@ -177,6 +178,187 @@ def append_new_months_to_file(output_file, topic, base_url, output_dir, new_mont
     return total_articles, filtered_articles
 
 
+def sanitize_filename(filename):
+    """Sanitize filename by removing invalid characters and limiting length."""
+    # Remove or replace invalid characters for Windows filesystem
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        filename = filename.replace(char, '_')
+    
+    # Replace multiple spaces with single space and strip
+    filename = re.sub(r'\s+', ' ', filename).strip()
+    
+    # Limit filename length (Windows has 255 char limit, leave room for extension and path)
+    if len(filename) > 100:
+        filename = filename[:100].rsplit(' ', 1)[0]  # Cut at word boundary
+    
+    return filename
+
+
+def extract_article_content(url):
+    """Extract the main content from an article page."""
+    try:
+        content = fetch_page_content(url)
+        
+        # Extract the main article content using regex patterns
+        # This matches the typical structure of Alibaba's monthly reports
+        
+        # First try to get content between <div class="post-content"> and </div>
+        content_pattern = re.compile(r'<div class="post-content">(.*?)</div>\s*<div class="post-footer">', re.S)
+        content_match = re.search(content_pattern, content)
+        
+        if content_match:
+            article_html = content_match.group(1)
+        else:
+            # Fallback pattern - look for content between common markers
+            content_pattern = re.compile(r'<div class="content">(.*?)<div class="footer">', re.S)
+            content_match = re.search(content_pattern, content)
+            if content_match:
+                article_html = content_match.group(1)
+            else:
+                # Last resort - get content between body tags
+                body_pattern = re.compile(r'<body[^>]*>(.*?)</body>', re.S)
+                body_match = re.search(body_pattern, content)
+                if body_match:
+                    article_html = body_match.group(1)
+                else:
+                    return "Could not extract article content."
+        
+        # Convert HTML to markdown-like format
+        article_content = html_to_markdown(article_html)
+        
+        return article_content
+        
+    except Exception as e:
+        return f"Error fetching article content: {e}"
+
+
+def html_to_markdown(html_content):
+    """Convert HTML content to markdown format."""
+    # Clean up the HTML content
+    content = html_content
+    
+    # Remove script and style tags
+    content = re.sub(r'<script[^>]*>.*?</script>', '', content, flags=re.S | re.I)
+    content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.S | re.I)
+    
+    # Convert headers
+    content = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1', content, flags=re.S | re.I)
+    content = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1', content, flags=re.S | re.I)
+    content = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1', content, flags=re.S | re.I)
+    content = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1', content, flags=re.S | re.I)
+    content = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1', content, flags=re.S | re.I)
+    content = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1', content, flags=re.S | re.I)
+    
+    # Convert paragraphs
+    content = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', content, flags=re.S | re.I)
+    
+    # Convert line breaks
+    content = re.sub(r'<br[^>]*/?>', '\n', content, flags=re.I)
+    
+    # Convert bold and italic
+    content = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', content, flags=re.S | re.I)
+    content = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', content, flags=re.S | re.I)
+    content = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', content, flags=re.S | re.I)
+    content = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', content, flags=re.S | re.I)
+    
+    # Convert code blocks and inline code
+    content = re.sub(r'<pre[^>]*><code[^>]*>(.*?)</code></pre>', r'```\n\1\n```\n', content, flags=re.S | re.I)
+    content = re.sub(r'<code[^>]*>(.*?)</code>', r'`\1`', content, flags=re.S | re.I)
+    content = re.sub(r'<pre[^>]*>(.*?)</pre>', r'```\n\1\n```\n', content, flags=re.S | re.I)
+    
+    # Convert lists
+    content = re.sub(r'<ul[^>]*>(.*?)</ul>', lambda m: convert_list(m.group(1), '*'), content, flags=re.S | re.I)
+    content = re.sub(r'<ol[^>]*>(.*?)</ol>', lambda m: convert_list(m.group(1), '1.'), content, flags=re.S | re.I)
+    
+    # Convert links
+    content = re.sub(r'<a[^>]*href=["\']([^"\']*)["\'][^>]*>(.*?)</a>', r'[\2](\1)', content, flags=re.S | re.I)
+    
+    # Convert images
+    content = re.sub(r'<img[^>]*src=["\']([^"\']*)["\'][^>]*alt=["\']([^"\']*)["\'][^>]*/?>', r'![\2](\1)', content, flags=re.I)
+    content = re.sub(r'<img[^>]*src=["\']([^"\']*)["\'][^>]*/?>', r'![](\1)', content, flags=re.I)
+    
+    # Remove remaining HTML tags
+    content = re.sub(r'<[^>]+>', '', content)
+    
+    # Clean up excessive whitespace
+    content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)  # Multiple newlines to double newlines
+    content = re.sub(r'[ \t]+', ' ', content)  # Multiple spaces to single space
+    
+    # Decode HTML entities
+    content = content.replace('&nbsp;', ' ')
+    content = content.replace('&lt;', '<')
+    content = content.replace('&gt;', '>')
+    content = content.replace('&amp;', '&')
+    content = content.replace('&quot;', '"')
+    content = content.replace('&#39;', "'")
+    
+    return content.strip()
+
+
+def convert_list(list_content, marker):
+    """Convert HTML list items to markdown."""
+    items = re.findall(r'<li[^>]*>(.*?)</li>', list_content, flags=re.S | re.I)
+    result = []
+    for i, item in enumerate(items):
+        item = re.sub(r'<[^>]+>', '', item).strip()  # Remove HTML tags
+        if marker == '1.':
+            result.append(f"{i+1}. {item}")
+        else:
+            result.append(f"{marker} {item}")
+    return '\n'.join(result) + '\n\n'
+
+
+def save_individual_articles(base_url, month_links, output_dir):
+    """Download and save individual articles as separate markdown files."""
+    articles_dir = os.path.join(output_dir, 'articles')
+    os.makedirs(articles_dir, exist_ok=True)
+    
+    total_saved = 0
+    
+    for month in month_links:
+        print(f"Processing articles for {month}...")
+        
+        # Fetch monthly page content
+        month_url = base_url + month
+        try:
+            month_content = fetch_page_content(month_url)
+            filtered_articles = extract_article_links(month_content)
+            
+            for article_link, article_title in filtered_articles:
+                # Generate filename: month + title
+                safe_title = sanitize_filename(article_title)
+                filename = f"{month.replace('/', '-')}_{safe_title}.md"
+                filepath = os.path.join(articles_dir, filename)
+                
+                # Skip if file already exists
+                if os.path.exists(filepath):
+                    print(f"  Skipping {filename} (already exists)")
+                    continue
+                
+                # Fetch article content
+                full_article_url = base_url + article_link
+                print(f"  Downloading: {article_title}")
+                
+                article_content = extract_article_content(full_article_url)
+                
+                # Create markdown file with metadata
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(f"# {article_title}\n\n")
+                    f.write(f"**Date:** {month}\n")
+                    f.write(f"**Source:** {full_article_url}\n\n")
+                    f.write("---\n\n")
+                    f.write(article_content)
+                
+                total_saved += 1
+                print(f"  ✓ Saved: {filename}")
+                
+        except Exception as e:
+            print(f"  Error processing {month}: {e}")
+    
+    return total_saved
+
+
 # Test function to verify filtering logic
 def test_filtering():
     """Test the filtering logic with sample titles."""
@@ -204,6 +386,44 @@ def test_filtering():
         print(f"{status} '{title}' -> {result} (expected: {expected})")
 
 
+def print_help():
+    """Print help information about available commands."""
+    help_text = """
+MySQL Knowledge Base Crawler - Help
+
+Usage:
+    python ali_crawler.py [options]
+
+Options:
+    (no options)        Run normal crawler to update monthly report summary
+    --download-articles Download ALL individual articles (may take a long time)
+    --test-articles     Download a few sample articles for testing
+    --test              Run filtering logic tests
+
+Features:
+    ✓ Incremental updates - only processes new months
+    ✓ MySQL/InnoDB content filtering with keyword exclusions
+    ✓ Individual article download with full content
+    ✓ Automatic file naming: {month}_{title}.md
+    ✓ Progress tracking and error handling
+
+Output Structure:
+    ali_monthly/
+    ├── 阿里数据库内核月报.md          # Summary with all article links
+    ├── .processed_months.txt          # Tracking file for incremental updates
+    └── articles/                      # Individual article contents
+        ├── 2025-05_MySQL无锁哈希表LF_HASH.md
+        ├── 2024-12_MySQL优化器代码速览.md
+        └── ...
+
+Examples:
+    python ali_crawler.py                  # Update summary only
+    python ali_crawler.py --test-articles  # Download a few test articles
+    python ali_crawler.py --download-articles  # Download all articles (453 files)
+    """
+    print(help_text)
+
+
 def main():
     """Main function to crawl Alibaba MySQL monthly reports with incremental updates."""
     base_url = 'http://mysql.taobao.org/monthly/'
@@ -226,6 +446,17 @@ def main():
     if not new_month_links:
         print(f"No new monthly reports found. All {len(all_month_links)} reports are already processed.")
         print(f"Existing file: {output_file}")
+        
+        # Ask if user wants to download individual articles
+        print("\nWould you like to download individual article contents?")
+        print("This will create separate markdown files for each article.")
+        download_articles = input("Download articles? (y/n): ").lower().strip()
+        
+        if download_articles == 'y':
+            print("Starting individual article download...")
+            saved_count = save_individual_articles(base_url, all_month_links, output_dir)
+            print(f"✓ Successfully saved {saved_count} individual articles")
+        
         return
     
     print(f"Found {len(new_month_links)} new monthly reports out of {len(all_month_links)} total")
@@ -241,9 +472,51 @@ def main():
     if total_articles > 0:
         print(f"Filtering efficiency: {(total_articles - filtered_articles) / total_articles * 100:.1f}% excluded")
     print(f"Output updated: {output_file}")
+    
+    # Ask if user wants to download individual articles for new months
+    if filtered_articles > 0:
+        print(f"\nWould you like to download individual article contents for the {len(new_month_links)} new months?")
+        download_articles = input("Download articles? (y/n): ").lower().strip()
+        
+        if download_articles == 'y':
+            print("Starting individual article download for new months...")
+            saved_count = save_individual_articles(base_url, new_month_links, output_dir)
+            print(f"✓ Successfully saved {saved_count} individual articles")
+
+
+def main_test_articles():
+    """Test function to download a few articles for testing."""
+    base_url = 'http://mysql.taobao.org/monthly/'
+    output_dir = 'ali_monthly'
+    
+    # Test with just a few recent months
+    test_months = ['2025/05', '2024/12']
+    
+    print("Testing article download with recent months...")
+    saved_count = save_individual_articles(base_url, test_months, output_dir)
+    print(f"✓ Test completed. Saved {saved_count} individual articles")
 
 
 if __name__ == "__main__":
-    # Uncomment the next line to run tests
-    # test_filtering()
-    main()
+    # Check command line arguments
+    download_all_articles = '--download-articles' in sys.argv
+    test_articles = '--test-articles' in sys.argv
+    run_tests = '--test' in sys.argv
+    
+    if run_tests:
+        test_filtering()
+    elif test_articles:
+        main_test_articles()
+    elif download_all_articles:
+        # Direct download mode - download all articles without prompting
+        print("Direct download mode: Downloading all individual articles...")
+        base_url = 'http://mysql.taobao.org/monthly/'
+        output_dir = 'ali_monthly'
+        
+        main_content = fetch_page_content(base_url)
+        all_month_links = extract_month_links(main_content)
+        
+        saved_count = save_individual_articles(base_url, all_month_links, output_dir)
+        print(f"✓ Successfully saved {saved_count} individual articles")
+    else:
+        print_help()
