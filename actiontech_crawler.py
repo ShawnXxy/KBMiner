@@ -683,7 +683,7 @@ Features:
     ✓ Handles pagination automatically
     ✓ Groups posts by category in markdown output
     ✓ Smart filtering - excludes ActionDB, ChatDBA, ClickHouse, DTLE, OceanBase, Kubernetes, MongoDB, Orchestrator, Redis
-    ✓ Title filtering - excludes MariaDB, ScaleFlux, TiDB, OB运维, clickhouse, 行业趋势, obclient, OceanBase, kubernetes, Mongo, orchestrator, Redis
+    ✓ Title filtering - excludes MariaDB, ScaleFlux, TiDB, OB运维, clickhouse, 行业趋势, obclient, OceanBase, kubernetes, Mongo, orchestrator, Redis, Cassandra
     ✓ Hard filters for MySQL核心模块揭秘 and 图解 MySQL categories
     ✓ Incremental crawling to avoid re-processing existing articles
     ✓ State tracking for efficient periodic runs
@@ -824,10 +824,12 @@ def test_filtering():
         ("MongoDB 数据建模", False),                            # Should be excluded
         ("Orchestrator 高可用", False),                         # Should be excluded
         ("Redis 集群管理", False),                              # Should be excluded
+        ("Cassandra 集群部署", False),                          # Should be excluded
         ("MySQL 与 MariaDB 对比分析", False),                   # Should be excluded (contains MariaDB)
         ("InnoDB 存储引擎详解", True),                          # Should be included
         ("数据库故障分析", True),                               # Should be included
         ("tidb 集群部署实践", False),                           # Should be excluded (case insensitive)
+        ("cassandra 性能优化", False),                          # Should be excluded (case insensitive)
     ]
     
     print("\nTesting title filtering logic:")
@@ -899,7 +901,7 @@ def should_include_title(title):
     
     Rules:
     - Exclude titles containing: "MariaDB", "ScaleFlux", "TiDB", "OB运维", "clickhouse",
-      "行业趋势", "obclient", "OceanBase", "kubernetes", "Mongo", "orchestrator", "Redis"
+      "行业趋势", "obclient", "OceanBase", "kubernetes", "Mongo", "orchestrator", "Redis", "Cassandra"
     - Case-insensitive matching
     """
     # Convert to lowercase for case-insensitive comparison
@@ -918,7 +920,8 @@ def should_include_title(title):
         'kubernetes',
         'mongo',
         'orchestrator',
-        'redis'
+        'redis',
+        'cassandra'
     ]
     
     # Check if title contains any excluded keywords
@@ -1104,7 +1107,7 @@ def main():
             print("\n🚫 Filtering Summary:")
             print(f"  Excluded {excluded_count} articles from unwanted categories/titles")
             print("  Excluded categories: ActionDB, ChatDBA, ClickHouse, DTLE, OceanBase, Kubernetes, MongoDB, Orchestrator, Redis")
-            print("  Excluded title keywords: MariaDB, ScaleFlux, TiDB, OB运维, clickhouse, 行业趋势, obclient, OceanBase, kubernetes, Mongo, orchestrator, Redis")
+            print("  Excluded title keywords: MariaDB, ScaleFlux, TiDB, OB运维, clickhouse, 行业趋势, obclient, OceanBase, kubernetes, Mongo, orchestrator, Redis, Cassandra")
         
         # Show category breakdown for new posts
         if filtered_posts:
