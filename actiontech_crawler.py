@@ -4,6 +4,8 @@ import re
 import urllib.request
 import urllib.parse
 import sys
+import json
+import datetime
 
 
 def fetch_page_content(url):
@@ -130,25 +132,45 @@ def get_all_pages_content(base_url):
     return all_posts
 
 
-def write_markdown_file(output_file, posts):
-    """Write all blog posts to a markdown file grouped by category."""
+def write_markdown_file(output_file, new_posts, existing_posts=None, incremental=False):
+    """Write blog posts to a markdown file grouped by category."""
     # Ensure output directory exists
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
+    # Combine new and existing posts if incremental
+    all_posts = new_posts[:]
+    if incremental and existing_posts:
+        # Add existing posts that are not in new_posts
+        new_urls = {url for _, url, _ in new_posts}
+        for url, title in existing_posts.items():
+            if url not in new_urls:
+                # Try to extract category from URL or use default
+                category = extract_category_from_url(url)
+                all_posts.append((title, url, category))
+    
     # Group posts by category
     categories = {}
-    for title, url, category in posts:
+    for title, url, category in all_posts:
         if category not in categories:
             categories[category] = []
         categories[category].append((title, url))
+    
+    # Sort articles within each category by title
+    for category in categories:
+        categories[category].sort(key=lambda x: x[0])
     
     with open(output_file, 'w', encoding='utf-8') as f:
         # Write main title
         f.write('# ActionTech 开源社区技术干货\n\n')
         f.write(f'**数据抓取时间**: {get_current_datetime()}\n')
         f.write('**来源**: https://opensource.actionsky.com/category/技术干货\n')
-        f.write(f'**总文章数**: {len(posts)}\n')
-        f.write(f'**分类数**: {len(categories)}\n\n')
+        f.write(f'**总文章数**: {len(all_posts)}\n')
+        f.write(f'**分类数**: {len(categories)}\n')
+        
+        if incremental and new_posts:
+            f.write(f'**新增文章数**: {len(new_posts)}\n')
+        
+        f.write('\n')
         
         # Write table of contents
         f.write('## 目录\n\n')
@@ -167,13 +189,66 @@ def write_markdown_file(output_file, posts):
             
             f.write('\n')
     
-    return len(posts), len(categories)
+    return len(all_posts), len(categories)
+
+
+def extract_category_from_url(url):
+    """Extract category from URL or return default category."""
+    if "技术专栏/揭秘" in url:
+        return "MySQL 核心模块揭秘"
+    elif "技术专栏/mysql-picture" in url:
+        return "图解 MySQL"
+    elif "mysql" in url.lower():
+        return "MySQL 新特性"
+    else:
+        return "技术干货"
 
 
 def get_current_datetime():
     """Get current date and time in readable format."""
-    import datetime
     return datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def load_crawl_state(state_file):
+    """Load the previous crawl state from file."""
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+                return state.get('crawled_urls', set()), state.get('last_crawl_time', '')
+        except Exception as e:
+            print(f"Warning: Could not load crawl state: {e}")
+    return set(), ''
+
+
+def save_crawl_state(state_file, crawled_urls, crawl_time):
+    """Save the current crawl state to file."""
+    try:
+        state = {
+            'crawled_urls': list(crawled_urls),
+            'last_crawl_time': crawl_time,
+            'total_articles': len(crawled_urls)
+        }
+        with open(state_file, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Warning: Could not save crawl state: {e}")
+
+
+def load_existing_posts(output_file):
+    """Load existing posts from the markdown file to avoid duplicates."""
+    existing_posts = {}
+    if os.path.exists(output_file):
+        try:
+            with open(output_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                # Extract URLs from markdown links
+                url_pattern = re.compile(r'\[([^\]]+)\]\(([^)]+)\)')
+                for title, url in url_pattern.findall(content):
+                    existing_posts[url] = title.strip()
+        except Exception as e:
+            print(f"Warning: Could not load existing posts: {e}")
+    return existing_posts
 
 
 def print_help():
@@ -185,7 +260,9 @@ Usage:
     python actiontech_crawler.py [options]
 
 Options:
-    (no options)        Run crawler to fetch all blog posts with filtering
+    (no options)        Run crawler in full mode to fetch all blog posts
+    --incremental, -i   Run crawler in incremental mode (only new posts)
+    --full, -f          Force full crawl (override incremental mode)
     --test              Run test to fetch first page only
     --test-filter       Test category filtering logic
     --help, -h          Show this help message
@@ -196,16 +273,30 @@ Features:
     ✓ Handles pagination automatically
     ✓ Groups posts by category in markdown output
     ✓ Smart filtering - excludes ActionDB, ChatDBA, ClickHouse, DTLE, OceanBase
+    ✓ Title filtering - excludes MariaDB, ScaleFlux, TiDB
+    ✓ Hard filters for MySQL核心模块揭秘 and 图解 MySQL categories
+    ✓ Incremental crawling to avoid re-processing existing articles
+    ✓ State tracking for efficient periodic runs
     ✓ Provides summary statistics
 
 Output:
     actiontech/
-    └── ActionTech技术干货.md      # All blog posts organized by category (filtered)
+    ├── ActionTech技术干货.md      # All blog posts organized by category
+    └── crawl_state.json          # State file for incremental crawling
 
 Examples:
-    python actiontech_crawler.py              # Fetch all blog posts (filtered)
+    python actiontech_crawler.py              # Full crawl (all posts)
+    python actiontech_crawler.py -i           # Incremental crawl (new posts only)
+    python actiontech_crawler.py -f           # Force full crawl
     python actiontech_crawler.py --test       # Test with first page only
     python actiontech_crawler.py --test-filter # Test filtering logic
+
+Incremental Mode:
+    - Tracks previously crawled articles
+    - Only processes new articles on subsequent runs
+    - Maintains complete article database
+    - Ideal for scheduled/periodic execution
+    - Significantly faster for regular updates
     """
     print(help_text)
 
@@ -388,15 +479,35 @@ def main():
     base_urls = [
         'https://opensource.actionsky.com/category/技术干货',
         'https://opensource.actionsky.com/category/技术专栏/揭秘',  # MySQL核心模块揭秘 category
-        'https://opensource.actionsky.com/category/技术专栏/mysql-picture/'  # 图解 MySQL category
+        'https://opensource.actionsky.com/category/技术专栏/mysql-picture'  # 图解 MySQL category
     ]
     output_dir = 'actiontech'
     output_file = os.path.join(output_dir, 'ActionTech技术干货.md')
+    state_file = os.path.join(output_dir, 'crawl_state.json')
+    
+    # Check for incremental mode flag
+    incremental_mode = '--incremental' in sys.argv or '-i' in sys.argv
+    force_full = '--full' in sys.argv or '-f' in sys.argv
     
     print("ActionTech Blog Crawler")
     print("=" * 40)
     
+    if incremental_mode and not force_full:
+        print("🔄 Running in incremental mode")
+    else:
+        print("🌐 Running in full crawl mode")
+    
     try:
+        current_time = get_current_datetime()
+        
+        # Load previous crawl state and existing posts
+        crawled_urls, last_crawl_time = load_crawl_state(state_file)
+        existing_posts = load_existing_posts(output_file) if incremental_mode and not force_full else {}
+        
+        if incremental_mode and not force_full and last_crawl_time:
+            print(f"📅 Last crawl: {last_crawl_time}")
+            print(f"📄 Existing articles: {len(existing_posts)}")
+        
         all_posts = []
         
         # Fetch all posts from all URLs
@@ -421,48 +532,92 @@ def main():
                 seen_urls.add(url)
         
         print(f"Unique posts after deduplication: {len(unique_posts)}")
-        all_posts = unique_posts
         
-        # Filter out excluded categories
+        # Filter new posts if in incremental mode
+        if incremental_mode and not force_full:
+            new_posts = []
+            for title, url, category in unique_posts:
+                if url not in crawled_urls:
+                    new_posts.append((title, url, category))
+            
+            print(f"📰 New posts found: {len(new_posts)}")
+            
+            if not new_posts:
+                print("✅ No new articles found. Database is up to date!")
+                return
+                
+            # Use only new posts for filtering
+            posts_to_process = new_posts
+        else:
+            posts_to_process = unique_posts
+        
         # Apply filtering and track statistics
         filtered_posts = []
         excluded_count = 0
         
-        for title, url, category in all_posts:
+        for title, url, category in posts_to_process:
             if should_include_post(title, category, url):
                 filtered_posts.append((title, url, category))
             else:
                 excluded_count += 1
                 print(f"  Excluded [{category}]: {title}")
         
-        all_posts = filtered_posts
-        
-        print(f"\nTotal posts found: {len(all_posts) + excluded_count}")
-        print(f"Posts excluded by filtering: {excluded_count}")
-        print(f"Posts after category filtering: {len(filtered_posts)}")
+        if incremental_mode and not force_full:
+            print("\n📊 Processing Summary:")
+            print(f"  New posts found: {len(posts_to_process)}")
+            print(f"  New posts excluded: {excluded_count}")
+            print(f"  New posts to add: {len(filtered_posts)}")
+        else:
+            print("\n📊 Processing Summary:")
+            print(f"  Total posts found: {len(posts_to_process)}")
+            print(f"  Posts excluded: {excluded_count}")
+            print(f"  Posts after filtering: {len(filtered_posts)}")
         
         # Write to markdown file
-        total_posts, total_categories = write_markdown_file(output_file, filtered_posts)
+        total_posts, total_categories = write_markdown_file(
+            output_file,
+            filtered_posts,
+            existing_posts if incremental_mode and not force_full else None,
+            incremental_mode and not force_full
+        )
         
-        print("\n✓ Successfully crawled ActionTech blog!")
-        print(f"  Total articles: {total_posts}")
-        print(f"  Excluded articles: {excluded_count}")
+        # Update crawl state
+        all_filtered_urls = {url for _, url, _ in filtered_posts}
+        if incremental_mode and not force_full:
+            # Add new URLs to existing crawled URLs
+            updated_crawled_urls = crawled_urls.union(all_filtered_urls)
+        else:
+            # Replace with current URLs
+            updated_crawled_urls = all_filtered_urls
+        
+        save_crawl_state(state_file, updated_crawled_urls, current_time)
+        
+        print("\n✅ Successfully crawled ActionTech blog!")
+        print(f"  Total articles in database: {total_posts}")
+        if incremental_mode and not force_full:
+            print(f"  New articles added: {len(filtered_posts)}")
         print(f"  Categories: {total_categories}")
         print(f"  Output file: {output_file}")
+        print(f"  State file: {state_file}")
         
         if excluded_count > 0:
             print("\n🚫 Filtering Summary:")
             print(f"  Excluded {excluded_count} articles from unwanted categories")
             print("  Excluded categories: ActionDB, ChatDBA, ClickHouse, DTLE, OceanBase")
+            print("  Excluded keywords: MariaDB, ScaleFlux, TiDB")
         
-        # Show category breakdown
-        categories = {}
-        for title, url, category in filtered_posts:
-            categories[category] = categories.get(category, 0) + 1
-        
-        print("\nCategory breakdown:")
-        for category, count in sorted(categories.items()):
-            print(f"  {category}: {count} 篇")
+        # Show category breakdown for new posts
+        if filtered_posts:
+            categories = {}
+            for title, url, category in filtered_posts:
+                categories[category] = categories.get(category, 0) + 1
+            
+            if incremental_mode and not force_full:
+                print("\n📈 New articles by category:")
+            else:
+                print("\n📈 Articles by category:")
+            for category, count in sorted(categories.items()):
+                print(f"  {category}: {count} 篇")
         
     except Exception as e:
         print(f"✗ Error during crawling: {e}")
@@ -475,6 +630,8 @@ if __name__ == "__main__":
     show_help = '--help' in sys.argv or '-h' in sys.argv
     run_test = '--test' in sys.argv
     test_filter = '--test-filter' in sys.argv
+    incremental_mode = '--incremental' in sys.argv or '-i' in sys.argv
+    force_full = '--full' in sys.argv or '-f' in sys.argv
     
     if show_help:
         print_help()
