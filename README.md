@@ -1,41 +1,152 @@
-# MySQL Knowledge Base Miner
+# MyKBMiner - 知识库挖掘工具集合
 
-A powerful Python crawler for building a comprehensive MySQL knowledge base from Alibaba's Database Kernel Monthly Reports.
+这个项目包含了两个专门用于技术博客爬取的 Python 脚本，用于构建数据库技术知识库。
 
-## 🎯 Features
+## 项目概述
 
-- **Incremental Updates**: Only processes new monthly reports, avoiding redundant work
-- **Smart Content Filtering**: Focuses on MySQL/InnoDB content while excluding other database technologies
-- **Individual Article Download**: Extracts full content from each article and saves as separate markdown files
-- **Automatic Image Management**: Downloads all images and creates local references in markdown files
-- **Progress Tracking**: Maintains processing state for reliable resumption after interruptions
-- **Clean Output**: Well-organized markdown files with proper formatting and metadata
+### 1. 阿里数据库内核月报爬虫 (`ali_crawler.py`)
+- **目标网站**: http://mysql.taobao.org/monthly/
+- **功能特性**:
+  - ✅ MySQL/InnoDB 内容智能过滤
+  - ✅ 增量更新机制 (跟踪已处理月份)
+  - ✅ 个人文章下载 (完整内容)
+  - ✅ 自动图片下载和本地引用
+  - ✅ Markdown 格式转换
+  - ✅ 进度跟踪和错误处理
 
-## 📁 Output Structure
+### 2. ActionTech 技术干货爬虫 (`actiontech_crawler.py`)
+- **目标网站**: https://opensource.actionsky.com/category/技术干货
+- **功能特性**:
+  - ✅ 全站技术文章爬取
+  - ✅ 自动分页处理
+  - ✅ 分类信息提取 (技术分享、故障分析、MySQL新特性等)
+  - ✅ 去重处理
+  - ✅ 分类统计和目录生成
+
+## 🎯 核心功能
+
+### 智能内容过滤
+- **阿里爬虫**: 专注 MySQL/InnoDB，自动排除 PolarDB、MariaDB 等
+- **ActionTech**: 自动识别技术分类，支持 13 种内容类型
+
+### 增量更新系统
+- 跟踪已处理内容，避免重复爬取
+- 支持断点续传和错误恢复
+
+### 多媒体处理
+- 自动下载文章中的图片
+- 生成唯一文件名避免冲突
+- 更新 Markdown 中的图片引用路径
+### 格式转换
+- HTML 到 Markdown 的智能转换
+- 保持代码块、列表、链接等格式
+- 清理多余的 HTML 标签
+
+## 使用方法
+
+### 阿里爬虫使用
+```bash
+# 更新月报摘要
+python ali_crawler.py
+
+# 下载所有文章内容 (包含图片)
+python ali_crawler.py --download-articles
+
+# 测试下载几篇文章
+python ali_crawler.py --test-articles
+
+# 测试图片下载功能
+python ali_crawler.py --debug-images
+
+# 查看帮助
+python ali_crawler.py --help
+```
+
+### ActionTech 爬虫使用
+```bash
+# 爬取所有技术文章
+python actiontech_crawler.py
+
+# 测试单页爬取
+python actiontech_crawler.py --test
+
+# 查看帮助
+python actiontech_crawler.py --help
+```
+
+## 📁 输出结构
+
+### 阿里爬虫输出
 
 ```
 ali_monthly/
-├── 阿里数据库内核月报.md          # Summary with all article links
-├── .processed_months.txt          # Tracking file for incremental updates
-└── articles/                      # Individual article contents
-    ├── .img/                      # Downloaded images (shared folder)
-    │   ├── db2d90cc428f_optimizer_logical_arch.png (2.4MB)
-    │   ├── 34ba0cd650e7_optimizer_code_arch.png (368KB)
-    │   ├── 432b9559c8ae_Query_expression.png (312KB)
-    │   └── ... (all images with unique naming)
+├── 阿里数据库内核月报.md          # 摘要文件 (按月份组织)
+├── .processed_months.txt          # 增量更新跟踪文件
+└── articles/                      # 完整文章内容
+    ├── .img/                      # 下载的图片文件
+    │   ├── abc123_diagram1.png
+    │   └── def456_chart2.jpg
     ├── 2025-05_MySQL无锁哈希表LF_HASH.md
-    ├── 2024-12_MySQL优化器代码速览.md (with 6 images)
-    ├── 2024-12_MySQL查询优化分析-常见慢查问题与优化方法.md
-    └── ... (453 total articles)
+    └── 2024-12_MySQL优化器代码速览.md
 ```
 
-## 🖼️ Image Management
+### ActionTech 爬虫输出
+```
+actiontech/
+├── ActionTech技术干货.md          # 所有文章 (按分类组织)
+└── ActionTech技术干货_测试.md      # 测试输出文件
+```
 
-The crawler automatically handles images with advanced features:
+## 📊 爬取统计
 
-- **Automatic Detection**: Finds all images in article HTML content
-- **Smart Download**: Downloads images to a shared `.img` folder under articles
-- **Unique Naming**: Uses URL hash + original filename to prevent conflicts
+### 阿里数据库内核月报
+- **总月份数**: 453 个月报
+- **已测试**: 4 篇文章 + 10 张图片
+- **覆盖内容**: MySQL、InnoDB 相关技术文章
+- **过滤效率**: 自动排除 PolarDB、MariaDB、行业动态等非核心内容
+
+### ActionTech 技术干货
+- **总文章数**: 614 篇
+- **分类数量**: 13 个技术分类
+- **页面总数**: 123 页
+- **主要分类**:
+  - 技术分享: 346 篇
+  - 故障分析: 129 篇
+  - MySQL 新特性: 98 篇
+  - 技术文章: 25 篇
+  - 其他分类: 16 篇
+
+## 🔧 技术特点
+
+### 共同特性
+- **Python 标准库**: 仅使用 urllib、re、os 等标准库
+- **编码处理**: 支持中文 URL 和内容
+- **错误处理**: 完善的异常处理和日志记录
+- **命令行界面**: 多种运行模式和选项
+
+### 高级功能
+- **智能过滤**: 基于关键词的内容筛选
+- **增量更新**: 避免重复处理已爬取内容
+- **多媒体处理**: 图片下载和本地化引用
+- **格式转换**: HTML 到 Markdown 的自动转换
+- **分类管理**: 自动提取和组织内容分类
+
+## 🚀 扩展建议
+
+### 可以添加的数据源
+- 美团技术团队博客
+- 字节跳动技术博客
+- 腾讯云数据库团队博客
+- PingCAP 技术博客
+- 其他公司技术博客
+
+### 功能增强建议
+- 全文搜索功能
+- 标签和关键词提取
+- 自动摘要生成
+- 内容相似度分析
+- 定期自动更新
+- Web 界面展示
 - **Local References**: Updates markdown to use relative paths (`![description](.img/filename.png)`)
 - **Format Support**: Handles PNG, JPG, GIF, and other web image formats
 - **Size Optimization**: Preserves original image quality and dimensions
