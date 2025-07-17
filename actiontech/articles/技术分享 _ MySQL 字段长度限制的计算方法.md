@@ -1,0 +1,538 @@
+# 技术分享 | MySQL 字段长度限制的计算方法
+
+**原文链接**: https://opensource.actionsky.com/20200227-mysql/
+**分类**: MySQL 新特性
+**发布时间**: 2020-02-27T01:02:48-08:00
+
+---
+
+> **作者：****kay**
+擅长 Oracle、MySQL、PostgresSQL 等多种数据库领域；
+擅长 Oracle、MySQL 性能优化、数据库架构设计、数据库故障修复、数据迁移以及恢复；
+热衷于研究 MySQL 数据库内核源码、分享技术文章，并拥有 Oracle OCP 认证；
+就职于江苏国泰新点软件有限公司，DBA 技术团队成员。
+**一、MySQL 限制回顾**
+之前在[《MySQL Text 字段的限制》](https://opensource.actionsky.com/20200226-mysql/)一文中讲过了关于 MySQL 在 Server 层和 InnoDB 层的限制，但是限制的算法没有详细展开，这里进行补充说明，先回顾一下 MySQL 的两个限制：
+1.  `MySQL Server 层` 的限制为单条记录的大小不超过 65535 字节；
+2.  `InnoDB 层` 不能超过 innodb_page_size 大小的一半（实际上还要小一点，因为要扣除一些页中元数据信息）, 以默认的 16K 设置为例，其限制为 8126。
+另：以下计算方式均已 MySQL 5.7.27 进行说明。
+**二、Server 层限制的计算方法**
+2.1 计算过程
+一般说来，如果是 `MySQL Server` 层做了限制，则返回如下报错：- `Row size too large. The maximum row size for the used table type,`
+- `not counting BLOBs, is 65535.`
+- `This includes storage overhead, check the manual.`
+- `You have to change some columns to TEXT or BLOBs`
+所以可以根据这个报错来定位到计算方式，其关键函数路径如下：- `mysql_prepare_create_table    /* sql/sql_table.cc:3474 */`
+- `  --> mysql_create_frm        /* sql/unireg.cc:107     */`
+- `   --> pack_header           /* sql/unireg.cc:733     */`
+在 `pack_header` 中存在这部分代码：- `if (reclength > (ulong) file->max_record_length()) /* 右值为 65535 */`
+- `{`
+- `  my_error(ER_TOO_BIG_ROWSIZE, /* 这个就是上面的报错信息对应的状态值 */`
+- `            MYF(0),`
+- `            static_cast<long>(file->max_record_length()));`
+- `  DBUG_RETURN(1);`
+- `}`
+重点在于 `reclength` 的值是否 `大于 65535`。因此了解一下 `reclength` 的计算过程：- `/* sql/unireg.cc:843 */`
+- `if (field->offset + data_offset + length > reclength)`
+- `  reclength= field->offset + data_offset + length;`
+- 
+- `/*`
+- `field->offset 的计算方式`
+- `sql/sql_table.cc:3816`
+- `*/`
+- `while ((sql_field=it++)) {`
+- `     /* 省略部分 */`
+- `    sql_field->offset= record_offset;  /* 当前记录的数据偏移量 */`
+- `    if (MTYP_TYPENR(sql_field->unireg_check) == Field::NEXT_NUMBER)`
+- `      auto_increment++;`
+- 
+- `    if (sql_field->stored_in_db)`
+- `      record_offset+= sql_field->pack_length; /* 累加当前字段的pack_length */`
+- `}`
+- 
+- 
+- `/*`
+- `data_offset 的计算方式`
+- `sql/unireg.cc:139`
+- `*/`
+- `data_offset= (create_info->null_bits + 7) / 8;`
+- 
+- 
+- `/*`
+- `length 的计算方式`
+- `sql/unireg.cc:833`
+- `*/`
+- `length=field->pack_length;`
+- ` /* 这个pack_length就是和字段类型相关，以varchar为例*/`
+- 
+- `/* sql/sql_table.cc:3082 */`
+- `sql_field->sql_type=    MYSQL_TYPE_VAR_STRING;`
+- `sql_field->pack_length= calc_pack_length(sql_field->sql_type,`
+- `                                        (uint) sql_field->length);`
+- 
+- `关于 `calc_pack_length` 的计算方式如下：`
+- 
+- 
+- `size_t calc_pack_length(enum_field_types type, size_t length)`
+- `{`
+- `  switch (type) {`
+- `  case MYSQL_TYPE_VAR_STRING:`
+- `  case MYSQL_TYPE_STRING:`
+- `  case MYSQL_TYPE_DECIMAL:     return (length);`
+- `  case MYSQL_TYPE_VARCHAR:     return (length + (length < 256 ? 1: 2));`
+- `  case MYSQL_TYPE_YEAR:`
+- `  case MYSQL_TYPE_TINY  : return 1;`
+- `  case MYSQL_TYPE_SHORT : return 2;`
+- `  case MYSQL_TYPE_INT24:`
+- `  case MYSQL_TYPE_NEWDATE: return 3;`
+- `  case MYSQL_TYPE_TIME: return 3;`
+- `  case MYSQL_TYPE_TIME2:`
+- `    return length > MAX_TIME_WIDTH ?`
+- `           my_time_binary_length(length - MAX_TIME_WIDTH - 1) : 3;`
+- `  case MYSQL_TYPE_TIMESTAMP: return 4;`
+- `  case MYSQL_TYPE_TIMESTAMP2:`
+- `    return length > MAX_DATETIME_WIDTH ?`
+- `           my_timestamp_binary_length(length - MAX_DATETIME_WIDTH - 1) : 4;`
+- `  case MYSQL_TYPE_DATE:`
+- `  case MYSQL_TYPE_LONG  : return 4;`
+- `  case MYSQL_TYPE_FLOAT : return sizeof(float);`
+- `  case MYSQL_TYPE_DOUBLE: return sizeof(double);`
+- `  case MYSQL_TYPE_DATETIME: return 8;`
+- `  case MYSQL_TYPE_DATETIME2:`
+- `    return length > MAX_DATETIME_WIDTH ?`
+- `           my_datetime_binary_length(length - MAX_DATETIME_WIDTH - 1) : 5;`
+- `  case MYSQL_TYPE_LONGLONG: return 8;   /* Don't crash if no longlong */`
+- `  case MYSQL_TYPE_NULL  : return 0;`
+- `  case MYSQL_TYPE_TINY_BLOB:    return 1+portable_sizeof_char_ptr;`
+- `  case MYSQL_TYPE_BLOB:     return 2+portable_sizeof_char_ptr;`
+- `  case MYSQL_TYPE_MEDIUM_BLOB:  return 3+portable_sizeof_char_ptr;`
+- `  case MYSQL_TYPE_LONG_BLOB:    return 4+portable_sizeof_char_ptr;`
+- `  case MYSQL_TYPE_GEOMETRY: return 4+portable_sizeof_char_ptr;`
+- `  case MYSQL_TYPE_JSON:         return 4+portable_sizeof_char_ptr;`
+- `  case MYSQL_TYPE_SET:`
+- `  case MYSQL_TYPE_ENUM:`
+- `  case MYSQL_TYPE_NEWDECIMAL:`
+- `    abort(); return 0;                          // This shouldn't happen`
+- `  case MYSQL_TYPE_BIT: return length / 8;`
+- `  default:`
+- `    return 0;`
+- `  }`
+- `}`
+2.2 小结
+根据上面计算方式的梳理，在 `MySQL Server` 层计算长度的公式，可以写成这样的伪代码：- `data_offset = (number_null_field + 7) / 8; /*number_null_field表示允许为null的字段数*/`
+- 
+- `total_length = 0;`
+- `for (int i = 0; i < n_fileds; i++) {`
+- `    total_length += calc_pack_length(field_type, length)`
+- `}`
+- 
+- `/*`
+- `field_type:数据类型`
+- `length:数据的字节数`
+- `注意varchar(100) 的字节数，在utf8mb4环境下，字节数为400`
+- `*/`
+- 
+- `total_length += data_offset;`
+**通过上述计算，需要满足 `total_length <= 65535`，即可通过 MySQL Server 层的检查。**
+**三、InnoDB 层限制的计算方法**
+3.1 计算过程
+InnooDB 层面如果出现长度超过限制，报错如下所示：- `ERROR 1118 (42000): Row size too large (> 8126).`
+- `Changing some columns to TEXT or BLOB may help.`
+- `In current row format, BLOB prefix of 0 bytes is stored inline.`
+通过对报错信息的搜索，其判断方式如下：- `/* dict0dict.cc:2515 */`
+- `/* Check the size limit on leaf pages. */`
+- `if (rec_max_size >= page_rec_max) {`
+- `    ib::error_or_warn(strict)`
+- `        << "Cannot add field " << field->name`
+- `        << " in table " << table->name`
+- `        << " because after adding it, the row size is "`
+- `        << rec_max_size`
+- `        << " which is greater than maximum allowed"`
+- `        " size (" << page_rec_max`
+- `        << ") for a record on index leaf page.";`
+- 
+- `    return(TRUE);`
+- `}`
+其中 `page_rec_max` 的定义如下：
+- `/* dict0dict.cc:2431 */`
+- `page_rec_max = srv_page_size == UNIV_PAGE_SIZE_MAX`
+- `              ? REC_MAX_DATA_SIZE - 1`
+- `              : page_get_free_space_of_empty(comp) / 2;`
+- 
+- `/* srv0srv.cc:222 */`
+- `ulong srv_page_size = UNIV_PAGE_SIZE_DEF;`
+- 
+- `/* 这个是默认值(DEF)，如果my.cnf中配置page_size为32K，那这个值就是32K */`
+- 
+- `/* univ.i:343 */`
+- `# define UNIV_PAGE_SIZE_DEF    (1 << UNIV_PAGE_SIZE_SHIFT_DEF)`
+- 
+- `/* univ.i:332 */`
+- `# define UNIV_PAGE_SIZE_SHIFT_DEF    14`
+- 
+- `/* univ.i:341 */`
+- `# define UNIV_PAGE_SIZE_MAX    (1 << UNIV_PAGE_SIZE_SHIFT_MAX)`
+- 
+- `/* univ.i:330 */`
+- `# define UNIV_PAGE_SIZE_SHIFT_MAX    16`
+- 
+- `/* rem0rec.h:1092 */`
+- `# define REC_MAX_DATA_SIZE    16384`
+从上面的源码定义中可以看到：1. srv_page_size 的默认值为 `1<<14` 即 16384，而我们配置也是 16384；2. UNIV_PAGE_SIZE_MAX 的值为 `1<<16` 即 65536；
+因此 `srv_page_size==UNIV_PAGE_SIZE_MAX` 不成立，所以 `page_rec_max` = `page_get_free_space_of_empty(comp) / 2`
+其中 `page_get_free_space_of_empty` 的定义如下：- `/*************************************************************//**`
+- `Calculates free space if a page is emptied.`
+- `@return free space */`
+- `UNIV_INLINE`
+- `ulint`
+- `page_get_free_space_of_empty(`
+- `/*=========================*/`
+- `    ulint   comp)       /*!< in: nonzero=compact page layout */`
+- `{`
+- `    if (comp) { /* 现在发布版本的配置，会走这个逻辑 */`
+- `        return((ulint)(UNIV_PAGE_SIZE`
+- `                   - PAGE_NEW_SUPREMUM_END`
+- `                   - PAGE_DIR`
+- `                   - 2 * PAGE_DIR_SLOT_SIZE));`
+- `    } /* 16384 - 120 - 8 - 4 = 16252 */`
+- 
+- `    return((ulint)(UNIV_PAGE_SIZE`
+- `               - PAGE_OLD_SUPREMUM_END`
+- `               - PAGE_DIR`
+- `               - 2 * PAGE_DIR_SLOT_SIZE));`
+- `}`
+- 
+- `/* univ.i:312 */`
+- `# define UNIV_PAGE_SIZE        ((ulint) srv_page_size)`
+- `/* 在我们的版本中为 16384 */`
+- 
+- `/* page0page.h:122 */`
+- `# define PAGE_NEW_SUPREMUM_END (PAGE_NEW_SUPREMUM + 8)`
+- `/* 38 + 36 + 2*10 + 2*5 + 8 + 8 = 120 */`
+- 
+- `/* page0page.h:119 */`
+- `# define PAGE_NEW_SUPREMUM    (PAGE_DATA + 2 * REC_N_NEW_EXTRA_BYTES + 8)`
+- 
+- `/* page0page.h:104 */`
+- `# define PAGE_DATA    (PAGE_HEADER + 36 + 2 * FSEG_HEADER_SIZE)`
+- 
+- `/* page0page.h:56 */`
+- `# define    PAGE_HEADER FSEG_PAGE_DATA`
+- 
+- `/* fsp0types.h:68 */`
+- `# define FSEG_PAGE_DATA        FIL_PAGE_DATA`
+- 
+- `/* fil0fil.h:517 */`
+- `# define FIL_PAGE_DATA        38U`
+- 
+- `/* fsp0types.h:81 */`
+- `# define FSEG_HEADER_SIZE    10`
+- 
+- `/* rem0rec.h:52 */`
+- `# define REC_N_NEW_EXTRA_BYTES    5`
+- 
+- `/* page0page.h:152 */`
+- `# define    PAGE_DIR        FIL_PAGE_DATA_END`
+- 
+- `/* fil0fil.h:525 */`
+- `# define FIL_PAGE_DATA_END    8`
+- 
+- `/* page0page.h:155 */`
+- `# define    PAGE_DIR_SLOT_SIZE  2`
+如上所示，`page_get_free_space_of_empty(comp)` 返回的值为 16252，即 `page_rec_max` = `16252 / 2`，刚好等于8126，其实从上面的报错结果( `> 8126`)也可以推测出来。
+接下来我们看一下一条记录实际长度（ `rec_max_size`）的计算方式：
+我们把代码精简一下，其计算过程如下：- `/* 下面是函数 dict_index_too_big_for_tree 中关于  rec_max_size 计算部分的内容 */`
+- `/* 涉及到的辅助函数，下面也有相关说明 */`
+- 
+- `rec_max_size = comp /* comp 为 true */`
+- `        ? REC_N_NEW_EXTRA_BYTES  /* rem0rec.h:52:#define REC_N_NEW_EXTRA_BYTES    5 */`
+- `        : REC_N_OLD_EXTRA_BYTES; /* rem0rec.h:49:#define REC_N_OLD_EXTRA_BYTES    6 */`
+- 
+- `rec_max_size += UT_BITS_IN_BYTES(new_index->n_nullable);`
+- 
+- `/*`
+- `这个宏的实现如下：`
+- 
+- `ut0ut.h:222`
+- `#define UT_BITS_IN_BYTES(b) (((b) + 7) / 8)`
+- 
+- `即 (允许为空的字段个数 + 7) / 8`
+- `*/`
+- 
+- `for (i = 0; i < new_index->n_fields; i++) {`
+- `    const dict_field_t* field`
+- `        = dict_index_get_nth_field(new_index, i);`
+- `    const dict_col_t*   col`
+- `        = dict_field_get_col(field);`
+- `    ulint           field_max_size;`
+- `    ulint           field_ext_max_size;`
+- 
+- `    /* In dtuple_convert_big_rec(), variable-length columns`
+- `    that are longer than BTR_EXTERN_LOCAL_STORED_MAX_SIZE`
+- `    may be chosen for external storage.`
+- 
+- `    Fixed-length columns, and all columns of secondary`
+- `    index records are always stored inline. */`
+- 
+- `    /* Determine the maximum length of the index field.`
+- `    The field_ext_max_size should be computed as the worst`
+- `    case in rec_get_converted_size_comp() for`
+- `    REC_STATUS_ORDINARY records. */`
+- 
+- `    field_max_size = dict_col_get_fixed_size(col, comp);`
+- 
+- `    /* 本质上是判断是否定长，并获得定长字段的字节数*/`
+- 
+- `    /*如果是定长，则直接 goto add_field_size 进行求值*/`
+- 
+- `    if (field_max_size && field->fixed_len != 0) {`
+- `        /* dict_index_add_col() should guarantee this */`
+- `        ut_ad(!field->prefix_len`
+- `              || field->fixed_len == field->prefix_len);`
+- `        /* Fixed lengths are not encoded`
+- `        in ROW_FORMAT=COMPACT. */`
+- `        field_ext_max_size = 0;`
+- `        goto add_field_size;`
+- `    }`
+- 
+- `    /*如果是变长，则计算最大值，然后求 field_ext_max_size的长度，`
+- `    这个是用户存储字段长度的变量`
+- `    这个只是默认初始值，后面会根据长度进行溢出页的设置`
+- `    */`
+- 
+- `    field_max_size = dict_col_get_max_size(col);`
+- `    field_ext_max_size = field_max_size < 256 ? 1 : 2;`
+- 
+- `    if (field->prefix_len) {`
+- `    /* 建表判断长度时，直接走else即可，这里会在建立二级索引时用到，但是和聚集索引不是一颗B_Tree，因此可以忽略 */`
+- `        if (field->prefix_len < field_max_size)  {`
+- `            field_max_size = field->prefix_len;`
+- `        }`
+- `    } else if (field_max_size > BTR_EXTERN_LOCAL_STORED_MAX_SIZE`
+- `           && dict_index_is_clust(new_index)) {`
+- 
+- `    /*`
+- `    btr0types.h:56`
+- `    #define BTR_EXTERN_LOCAL_STORED_MAX_SIZE    \`
+- `             (BTR_EXTERN_FIELD_REF_SIZE * 2)`
+- 
+- `    btr0types.h:53`
+- `    #define BTR_EXTERN_FIELD_REF_SIZE   FIELD_REF_SIZE`
+- 
+- `    page0size.h:32`
+- `    #define FIELD_REF_SIZE 20`
+- 
+- `    所以这段代码的意思为：`
+- `    如果变长字段的最大值大于40 （溢出页指针的2倍），则这个字段在页内`
+- `    只保留40个字节，且长度变量设置为1，即总共占用41个字节。*/`
+- 
+- `    /* In the worst case, we have a locally stored`
+- `    column of BTR_EXTERN_LOCAL_STORED_MAX_SIZE bytes.`
+- `    The length can be stored in one byte.  If the`
+- `    column were stored externally, the lengths in`
+- `    the clustered index page would be`
+- `    BTR_EXTERN_FIELD_REF_SIZE and 2. */`
+- 
+- `        field_max_size = BTR_EXTERN_LOCAL_STORED_MAX_SIZE;`
+- `        field_ext_max_size = 1;`
+- `    }`
+- 
+- `    if (comp) {`
+- `        /* Add the extra size for ROW_FORMAT=COMPACT.`
+- `        For ROW_FORMAT=REDUNDANT, these bytes were`
+- `        added to rec_max_size before this loop. */`
+- `        rec_max_size += field_ext_max_size;`
+- `    }`
+- `    add_field_size:`
+- `    rec_max_size += field_max_size;`
+- 
+- `    /* Check the size limit on leaf pages. */`
+- `    if (rec_max_size >= page_rec_max) {`
+- `        ib::error_or_warn(strict)`
+- `            << "Cannot add field " << field->name`
+- `            << " in table " << table->name`
+- `            << " because after adding it, the row size is "`
+- `            << rec_max_size`
+- `            << " which is greater than maximum allowed"`
+- `            " size (" << page_rec_max`
+- `            << ") for a record on index leaf page.";`
+- 
+- `        return(TRUE);`
+- `    }`
+- 
+- `/ * 省略后续代码，相关辅助函数：*/`
+- 
+- `ulint`
+- `dict_col_get_fixed_size(`
+- `/*====================*/`
+- `    const dict_col_t*   col,    /*!< in: column */`
+- `    ulint           comp)   /*!< in: nonzero=ROW_FORMAT=COMPACT */`
+- `{`
+- `    return(dtype_get_fixed_size_low(col->mtype, col->prtype, col->len,`
+- `                    col->mbminmaxlen, comp));`
+- `    /*`
+- `     根据实现，可以简单的计算为：`
+- ` 1. 定长的为显示指定的 字符数*字符宽度`
+- `   - 例如 char(10), 在 utf8mb4 里面，字节为 40`
+- ` 2. 变长的直接返回0`
+- `    */`
+- `}`
+- 
+- `/***********************************************************************//**`
+- `Returns the size of a fixed size data type, 0 if not a fixed size type.`
+- `@return fixed size, or 0 */`
+- `UNIV_INLINE`
+- `ulint`
+- `dtype_get_fixed_size_low(`
+- `/*=====================*/`
+- `    ulint   mtype,      /*!< in: main type */`
+- `    ulint   prtype,     /*!< in: precise type */`
+- `    ulint   len,        /*!< in: length */`
+- `    ulint   mbminmaxlen,    /*!< in: minimum and maximum length of`
+- `                a multibyte character, in bytes */`
+- `    ulint   comp)       /*!< in: nonzero=ROW_FORMAT=COMPACT  */`
+- `{`
+- `    switch (mtype) {`
+- `    case DATA_SYS:`
+- `# ifdef UNIV_DEBUG`
+- `        switch (prtype & DATA_MYSQL_TYPE_MASK) {`
+- `        case DATA_ROW_ID:`
+- `            ut_ad(len == DATA_ROW_ID_LEN);`
+- `            break;`
+- `        case DATA_TRX_ID:`
+- `            ut_ad(len == DATA_TRX_ID_LEN);`
+- `            break;`
+- `        case DATA_ROLL_PTR:`
+- `            ut_ad(len == DATA_ROLL_PTR_LEN);`
+- `            break;`
+- `        default:`
+- `            ut_ad(0);`
+- `            return(0);`
+- `        }`
+- `# endif /* UNIV_DEBUG */`
+- `    // Fall through.`
+- `    case DATA_CHAR:`
+- `    case DATA_FIXBINARY:`
+- `    case DATA_INT:`
+- `    case DATA_FLOAT:`
+- `    case DATA_DOUBLE:`
+- `    case DATA_POINT:`
+- `        return(len);`
+- `    case DATA_MYSQL:`
+- `# ifndef UNIV_HOTBACKUP`
+- `        if (prtype & DATA_BINARY_TYPE) {`
+- `            return(len);`
+- `        } else if (!comp) {`
+- `            return(len);`
+- `        } else {`
+- `#ifdef UNIV_DEBUG`
+- `            ulint   i_mbminlen, i_mbmaxlen;`
+- 
+- `            innobase_get_cset_width(`
+- `                dtype_get_charset_coll(prtype),`
+- `                &i_mbminlen, &i_mbmaxlen);`
+- 
+- `            ut_ad(DATA_MBMINMAXLEN(i_mbminlen, i_mbmaxlen)`
+- `                  == mbminmaxlen);`
+- `# endif /* UNIV_DEBUG */`
+- `            if (DATA_MBMINLEN(mbminmaxlen)`
+- `                == DATA_MBMAXLEN(mbminmaxlen)) {`
+- `                return(len);`
+- `            }`
+- `        }`
+- `# else /* !UNIV_HOTBACKUP */`
+- `        return(len);`
+- `# endif /* !UNIV_HOTBACKUP */`
+- `        /* fall through for variable-length charsets */`
+- `    case DATA_VARCHAR:`
+- `    case DATA_BINARY:`
+- `    case DATA_DECIMAL:`
+- `    case DATA_VARMYSQL:`
+- `    case DATA_VAR_POINT:`
+- `    case DATA_GEOMETRY:`
+- `    case DATA_BLOB:`
+- `        return(0);`
+- `    default:`
+- `        ut_error;`
+- `    }`
+- 
+- `    return(0);`
+- `}`
+- 
+- `ulint`
+- `dict_col_get_max_size(`
+- `/*==================*/`
+- ` const dict_col_t*   col)    /*!< in: column */`
+- `{`
+- `   return(dtype_get_max_size_low(col->mtype, col->len));`
+- `}`
+- 
+- `ulint`
+- `dtype_get_max_size_low(`
+- `/*===================*/`
+- `    ulint   mtype,      /*!< in: main type */`
+- `    ulint   len)        /*!< in: length */`
+- `{`
+- `    switch (mtype) {`
+- `        case DATA_SYS:`
+- `        case DATA_CHAR:`
+- `        case DATA_FIXBINARY:`
+- `        case DATA_INT:`
+- `        case DATA_FLOAT:`
+- `        case DATA_DOUBLE:`
+- `        case DATA_MYSQL:`
+- `        case DATA_VARCHAR:`
+- `        case DATA_BINARY:`
+- `        case DATA_DECIMAL:`
+- `        case DATA_VARMYSQL:`
+- `        case DATA_POINT:`
+- `            return(len);`
+- `        case DATA_VAR_POINT:`
+- `        case DATA_GEOMETRY:`
+- `        case DATA_BLOB:`
+- `            break;`
+- `        default:`
+- `            ut_error;`
+- `    }`
+- 
+- `    return(ULINT_MAX);`
+- `}`
+3.2 小结
+根据上面计算方式的梳理，在 `InnoDB Server` 层计算长度的公式，可以写成这样的伪代码：- `rec_max_size = 5;`
+- `/*`
+- `  innodb header 中固定的两个值`
+- `  DB_TRX_ID: 6 Byte`
+- `  DB_ROLL_PTR: 7 Byte`
+- `*/`
+- `rec_max_size += 6+7;`
+- 
+- `/* rem0rec.h:70`
+- `# define REC_NODE_PTR_SIZE    4`
+- 
+- `dict0dict.cc:2536`
+- `rec_max_size + REC_NODE_PTR_SIZE >= page_ptr_max`
+- `*/`
+- `rec_max_size += 4;`
+- 
+- `rec_max_size += (number_null_field + 7) / 8; /*number_null_field表示允许为null的字段数*/`
+- 
+- `for (int i = 0; i < n_fileds; i++) {`
+- `    /* 定长字段 */`
+- `    if (field.type is fixed) {`
+- `        rec_max_size += filed.length;`
+- `        /*char需要 x4个字节的 utf8mb4类型*/`
+- `        continue;`
+- `    }`
+- 
+- `    /* 变长字段 */`
+- `    field_ext_max_size = 1;`
+- `    if (field.type is variable) {`
+- `        field_max_size = field.length > 40 ? 40 : field.length;`
+- `    }`
+- 
+- `    rec_max_size += field_max_size + field_ext_max_size;`
+- `}`
+**通过上述计算，需要满足 `rec_max_size` < 8126，即可通过 InnoDB 层的检查。**
+**四、总结**
+1. 必须在 MySQL Server 层和 InnoDB 层同时满足上述条件，才能建表成功；
+2. 如果出现上述报错情况，大部分是因为 varchar 等设置过大，建议可以将一些字段逐步缩小，或者用 text 进行代替；

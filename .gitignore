@@ -145,7 +145,6 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific
-actiontech/
 logs/
 temp/
 cache/
