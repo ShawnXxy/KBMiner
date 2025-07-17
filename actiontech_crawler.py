@@ -21,57 +21,47 @@ def extract_blog_posts(content):
     """
     blog_posts = []
     
-    # Pattern to match the blog post structure based on observed HTML
-    # Looking for posts with title, link, and category information
-    
-    # Pattern for article titles and URLs
-    title_url_pattern = re.compile(
+    # Improved approach: Find all articles with their associated categories
+    # Pattern to match the full article structure: category + title + content
+    article_pattern = re.compile(
+        r'<h6[^>]*class="category[^"]*"[^>]*>\s*<a[^>]*href="[^"]*category[^"]*"[^>]*>(.*?)</a>[^<]*</h6>.*?'
         r'<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>\s*</h2>',
         re.S | re.I
     )
     
-    # Find all title-URL pairs
-    title_url_matches = title_url_pattern.findall(content)
+    article_matches = article_pattern.findall(content)
     
-    # Split content into sections to match categories with posts
-    # Each post section typically starts with a category and follows with the post
-    sections = re.split(r'<h6[^>]*>\s*<a[^>]*href="[^"]*category', content)
-    
-    current_category = "未分类"  # Default category
-    
-    for i, section in enumerate(sections):
-        if i == 0:
-            continue  # Skip the first section (before any category)
-            
-        # Extract category from this section
-        category_match = re.search(r'"[^>]*>(.*?)</a>\s*</h6>', section, re.S | re.I)
-        if category_match:
-            current_category = category_match.group(1).strip()
-            # Clean up category text
-            current_category = re.sub(r'<[^>]+>', '', current_category).strip()
+    for category, url, title in article_matches:
+        # Clean up category
+        clean_category = re.sub(r'<[^>]+>', '', category).strip()
+        clean_category = clean_category.replace('\n', ' ').replace('\r', '')
+        clean_category = re.sub(r'\s+', ' ', clean_category)
         
-        # Find blog posts in this section
-        section_posts = title_url_pattern.findall(section)
+        # Clean up title
+        clean_title = re.sub(r'<[^>]+>', '', title).strip()
+        clean_title = clean_title.replace('\n', ' ').replace('\r', '')
+        clean_title = re.sub(r'\s+', ' ', clean_title)
         
-        for url, title in section_posts:
-            # Clean up title
-            clean_title = re.sub(r'<[^>]+>', '', title).strip()
-            clean_title = clean_title.replace('\n', ' ').replace('\r', '')
-            clean_title = re.sub(r'\s+', ' ', clean_title)
-            
-            # Ensure URL is absolute
-            if url.startswith('/'):
-                url = 'https://opensource.actionsky.com' + url
-            elif not url.startswith('http'):
-                url = 'https://opensource.actionsky.com/' + url
-            
-            if clean_title and url:
-                blog_posts.append((clean_title, url, current_category))
+        # Ensure URL is absolute
+        if url.startswith('/'):
+            url = 'https://opensource.actionsky.com' + url
+        elif not url.startswith('http'):
+            url = 'https://opensource.actionsky.com/' + url
+        
+        if clean_title and url and should_include_post(clean_title, clean_category, url):
+            blog_posts.append((clean_title, url, clean_category))
     
-    # If the section-based approach didn't work well, fall back to simpler approach
-    if len(blog_posts) < 5:  # If we got very few results, try alternative
-        blog_posts = []
-        # Alternative approach: extract all posts and assign default category
+    # If the improved approach didn't find enough results, fall back to simpler approach
+    if len(blog_posts) < 3:
+        print(f"    Improved extraction found {len(blog_posts)} posts, trying fallback method...")
+        
+        # Fallback: Pattern for article titles and URLs only
+        title_url_pattern = re.compile(
+            r'<h2[^>]*>\s*<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>\s*</h2>',
+            re.S | re.I
+        )
+        title_url_matches = title_url_pattern.findall(content)
+        
         for url, title in title_url_matches:
             clean_title = re.sub(r'<[^>]+>', '', title).strip()
             clean_title = clean_title.replace('\n', ' ').replace('\r', '')
@@ -82,7 +72,7 @@ def extract_blog_posts(content):
             elif not url.startswith('http'):
                 url = 'https://opensource.actionsky.com/' + url
             
-            if clean_title and url:
+            if clean_title and url and should_include_post(clean_title, "技术干货", url):
                 blog_posts.append((clean_title, url, "技术干货"))
     
     return blog_posts
@@ -195,8 +185,9 @@ Usage:
     python actiontech_crawler.py [options]
 
 Options:
-    (no options)        Run crawler to fetch all blog posts
+    (no options)        Run crawler to fetch all blog posts with filtering
     --test              Run test to fetch first page only
+    --test-filter       Test category filtering logic
     --help, -h          Show this help message
 
 Features:
@@ -204,15 +195,17 @@ Features:
     ✓ Extracts post titles, URLs, and categories
     ✓ Handles pagination automatically
     ✓ Groups posts by category in markdown output
+    ✓ Smart filtering - excludes ActionDB, ChatDBA, ClickHouse, DTLE, OceanBase
     ✓ Provides summary statistics
 
 Output:
     actiontech/
-    └── ActionTech技术干货.md      # All blog posts organized by category
+    └── ActionTech技术干货.md      # All blog posts organized by category (filtered)
 
 Examples:
-    python actiontech_crawler.py              # Fetch all blog posts
+    python actiontech_crawler.py              # Fetch all blog posts (filtered)
     python actiontech_crawler.py --test       # Test with first page only
+    python actiontech_crawler.py --test-filter # Test filtering logic
     """
     print(help_text)
 
@@ -247,9 +240,147 @@ def test_single_page():
         print(f"✗ Test failed: {e}")
 
 
+def test_filtering():
+    """Test the category and title filtering logic with sample data."""
+    
+    # Test category filtering
+    category_test_cases = [
+        ("ActionDB", False),            # Should be excluded
+        ("ChatDBA", False),             # Should be excluded
+        ("ClickHouse", False),          # Should be excluded
+        ("ClickHouse 系列", False),      # Should be excluded
+        ("DTLE", False),                # Should be excluded
+        ("DTLE 数据传输组件", False),     # Should be excluded
+        ("OceanBase", False),           # Should be excluded
+        ("技术分享", True),             # Should be included
+        ("故障分析", True),             # Should be included
+        ("MySQL 新特性", True),         # Should be included
+        ("技术干货", True),             # Should be included
+        ("MySQL 核心模块揭秘", True),    # Should be included
+    ]
+    
+    print("Testing category filtering logic:")
+    for category, expected in category_test_cases:
+        result = should_include_category(category)
+        status = "✓" if result == expected else "✗"
+        print(f"{status} '{category}' -> {result} (expected: {expected})")
+    
+    # Test title filtering
+    title_test_cases = [
+        ("MySQL优化技术分析", True),                              # Should be included
+        ("MariaDB 性能对比研究", False),                         # Should be excluded
+        ("ScaleFlux 存储技术介绍", False),                        # Should be excluded
+        ("TiDB 分布式数据库架构", False),                        # Should be excluded
+        ("MySQL 与 MariaDB 对比分析", False),                   # Should be excluded (contains MariaDB)
+        ("InnoDB 存储引擎详解", True),                          # Should be included
+        ("数据库故障分析", True),                               # Should be included
+        ("tidb 集群部署实践", False),                           # Should be excluded (case insensitive)
+    ]
+    
+    print("\nTesting title filtering logic:")
+    for title, expected in title_test_cases:
+        result = should_include_title(title)
+        status = "✓" if result == expected else "✗"
+        print(f"{status} '{title}' -> {result} (expected: {expected})")
+    
+    # Test combined filtering
+    combined_test_cases = [
+        ("MySQL优化技术", "技术分享", "https://opensource.actionsky.com/123", True),                     # Should be included
+        ("MariaDB 性能分析", "技术分享", "https://opensource.actionsky.com/456", False),                # Should be excluded (title)
+        ("MySQL 新特性", "ChatDBA", "https://opensource.actionsky.com/789", False),                    # Should be excluded (category)
+        ("TiDB 架构设计", "ActionDB", "https://opensource.actionsky.com/012", False),                  # Should be excluded (both)
+        ("MySQL核心模块详解", "MySQL核心模块揭秘", "https://opensource.actionsky.com/category/技术专栏/揭秘/345", True),  # Should be included (hard filter)
+        ("MariaDB核心分析", "其他分类", "https://opensource.actionsky.com/category/技术专栏/揭秘/678", True),  # Should be included (hard filter overrides title filter)
+    ]
+    
+    print("\nTesting combined filtering logic:")
+    for title, category, url, expected in combined_test_cases:
+        result = should_include_post(title, category, url)
+        status = "✓" if result == expected else "✗"
+        reason = "title" if not should_include_title(title) else "category" if not should_include_category(category) else "both" if not should_include_title(title) and not should_include_category(category) else "hard filter" if "技术专栏/揭秘" in url else "unknown"
+        print(f"{status} '{title}' [{category}] -> {result} (expected: {expected})")
+        if result != expected:
+            print(f"    Reason: {reason} filter")
+
+
+def should_include_category(category):
+    """
+    Determine if a blog post should be included based on category filtering rules.
+    
+    Rules:
+    - Exclude categories: "ActionDB", "ChatDBA", "ClickHouse", "DTLE", "OceanBase"
+    - Include all other categories
+    """
+    # Convert to lowercase for case-insensitive comparison
+    category_lower = category.lower()
+    
+    # List of categories to exclude
+    excluded_categories = [
+        'actiondb',
+        'chatdba',
+        'clickhouse',
+        'clickhouse 系列',
+        'dtle',
+        'dtle 数据传输组件',
+        'oceanbase'
+    ]
+    
+    # Check if category should be excluded
+    for excluded in excluded_categories:
+        if excluded in category_lower:
+            return False
+    
+    return True
+
+
+def should_include_title(title):
+    """
+    Determine if a blog post should be included based on title filtering rules.
+    
+    Rules:
+    - Exclude titles containing: "MariaDB", "ScaleFlux", "TiDB"
+    - Case-insensitive matching
+    """
+    # Convert to lowercase for case-insensitive comparison
+    title_lower = title.lower()
+    
+    # List of keywords to exclude from titles
+    excluded_keywords = [
+        'mariadb',
+        'scaleflux',
+        'tidb'
+    ]
+    
+    # Check if title contains any excluded keywords
+    for keyword in excluded_keywords:
+        if keyword in title_lower:
+            return False
+    
+    return True
+
+
+def should_include_post(title, category, url=None):
+    """
+    Determine if a blog post should be included based on title, category, and URL filtering.
+    
+    Rules:
+    - Must pass both title and category filters
+    - Hard filter: Always include blogs from "MySQL核心模块揭秘" category (URL contains "技术专栏/揭秘")
+    """
+    # Hard filter: Always include MySQL core module articles
+    if url and "技术专栏/揭秘" in url:
+        print(f"  Hard filter: Including MySQL核心模块揭秘 article: {title}")
+        return True
+    
+    return should_include_title(title) and should_include_category(category)
+
+
 def main():
     """Main function to crawl ActionTech blog."""
-    base_url = 'https://opensource.actionsky.com/category/技术干货'
+    base_urls = [
+        'https://opensource.actionsky.com/category/技术干货',
+        'https://opensource.actionsky.com/category/技术专栏/揭秘'  # MySQL核心模块揭秘 category
+    ]
     output_dir = 'actiontech'
     output_file = os.path.join(output_dir, 'ActionTech技术干货.md')
     
@@ -257,8 +388,14 @@ def main():
     print("=" * 40)
     
     try:
-        # Fetch all posts from all pages
-        all_posts = get_all_pages_content(base_url)
+        all_posts = []
+        
+        # Fetch all posts from all URLs
+        for base_url in base_urls:
+            print(f"\nFetching from: {base_url}")
+            posts = get_all_pages_content(base_url)
+            all_posts.extend(posts)
+            print(f"Found {len(posts)} posts from this URL")
         
         if not all_posts:
             print("No blog posts found!")
@@ -275,18 +412,43 @@ def main():
                 seen_urls.add(url)
         
         print(f"Unique posts after deduplication: {len(unique_posts)}")
+        all_posts = unique_posts
+        
+        # Filter out excluded categories
+        # Apply filtering and track statistics
+        filtered_posts = []
+        excluded_count = 0
+        
+        for title, url, category in all_posts:
+            if should_include_post(title, category, url):
+                filtered_posts.append((title, url, category))
+            else:
+                excluded_count += 1
+                print(f"  Excluded [{category}]: {title}")
+        
+        all_posts = filtered_posts
+        
+        print(f"\nTotal posts found: {len(all_posts) + excluded_count}")
+        print(f"Posts excluded by filtering: {excluded_count}")
+        print(f"Posts after category filtering: {len(filtered_posts)}")
         
         # Write to markdown file
-        total_posts, total_categories = write_markdown_file(output_file, unique_posts)
+        total_posts, total_categories = write_markdown_file(output_file, filtered_posts)
         
         print("\n✓ Successfully crawled ActionTech blog!")
         print(f"  Total articles: {total_posts}")
+        print(f"  Excluded articles: {excluded_count}")
         print(f"  Categories: {total_categories}")
         print(f"  Output file: {output_file}")
         
+        if excluded_count > 0:
+            print("\n🚫 Filtering Summary:")
+            print(f"  Excluded {excluded_count} articles from unwanted categories")
+            print("  Excluded categories: ActionDB, ChatDBA, ClickHouse, DTLE, OceanBase")
+        
         # Show category breakdown
         categories = {}
-        for title, url, category in unique_posts:
+        for title, url, category in filtered_posts:
             categories[category] = categories.get(category, 0) + 1
         
         print("\nCategory breakdown:")
@@ -303,9 +465,12 @@ if __name__ == "__main__":
     # Check command line arguments
     show_help = '--help' in sys.argv or '-h' in sys.argv
     run_test = '--test' in sys.argv
+    test_filter = '--test-filter' in sys.argv
     
     if show_help:
         print_help()
+    elif test_filter:
+        test_filtering()
     elif run_test:
         test_single_page()
     else:
