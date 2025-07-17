@@ -319,41 +319,73 @@ def extract_article_content(url):
         with urllib.request.urlopen(request, timeout=30) as response:
             content = response.read().decode('utf-8')
         
-        # First try to find the more specific single-post-wrap entry-content class
-        specific_pattern = r'<div[^>]*class="[^"]*single-post-wrap[^"]*entry-content[^"]*"[^>]*>(.*?)</div>'
-        match = re.search(specific_pattern, content, re.S | re.I)
-        
-        if not match:
-            # Fallback to original entry-content pattern
-            entry_content_pattern = r'<div[^>]*class="[^"]*entry-content[^"]*"[^>]*>(.*?)</div>'
-            match = re.search(entry_content_pattern, content, re.S | re.I)
-        
-        if not match:
-            # Additional fallback patterns for more robust extraction
-            fallback_patterns = [
-                r'<div[^>]*class="[^"]*post-content[^"]*"[^>]*>(.*?)</div>',
-                r'<div[^>]*class="[^"]*article-content[^"]*"[^>]*>(.*?)</div>',
-                r'<article[^>]*>(.*?)</article>',
-                r'<div[^>]*class="[^"]*content[^"]*"[^>]*>(.*?)</div>'
-            ]
+        # Target the specific div: <div class="single-post-wrap entry-content">
+        # Use a more robust approach to handle nested divs properly
+        def extract_div_content(html_content, target_class):
+            """Extract content from a specific div class, handling nested structures."""
+            # Find the opening div tag
+            start_pattern = rf'<div[^>]*class="[^"]*{re.escape(target_class)}[^"]*"[^>]*>'
+            start_match = re.search(start_pattern, html_content, re.I)
             
-            for pattern in fallback_patterns:
-                match = re.search(pattern, content, re.S | re.I)
-                if match:
-                    print(f"    Using fallback pattern for content extraction in {url}")
+            if not start_match:
+                return None
+            
+            start_pos = start_match.end()
+            div_count = 1
+            pos = start_pos
+            
+            # Find the matching closing div by counting nested divs
+            while pos < len(html_content) and div_count > 0:
+                # Look for next div opening or closing
+                next_open = html_content.find('<div', pos)
+                next_close = html_content.find('</div>', pos)
+                
+                if next_close == -1:
                     break
+                
+                if next_open != -1 and next_open < next_close:
+                    # Found opening div first
+                    div_count += 1
+                    pos = next_open + 4
+                else:
+                    # Found closing div
+                    div_count -= 1
+                    if div_count == 0:
+                        # Found matching closing div
+                        return html_content[start_pos:next_close]
+                    pos = next_close + 6
+            
+            return None
         
-        if not match:
-            print(f"    Warning: Could not find any content div in {url}")
+        # Try to extract content using the exact class match
+        article_content = extract_div_content(content, "single-post-wrap entry-content")
+        
+        if article_content:
+            print("    Found content using target div extraction")
+        else:
+            # Try flexible pattern for class order variations
+            article_content = extract_div_content(content, "entry-content single-post-wrap")
+            if article_content:
+                print("    Found content using flexible div extraction")
+            else:
+                article_content = None
+        
+        if not article_content:
+            print(f"    Warning: Could not find target content div in {url}")
             return None, None, None
-        
-        article_content = match.group(1)
         
         # Validate that we have actual content (not just empty tags)
         text_content = re.sub(r'<[^>]+>', '', article_content).strip()
-        if len(text_content) < 50:  # Minimum content length check
+        text_content = re.sub(r'\s+', ' ', text_content)  # Normalize whitespace
+        
+        if len(text_content) < 100:  # Check minimum content length
             print(f"    Warning: Extracted content too short ({len(text_content)} chars) from {url}")
-            return None, None, None
+            print(f"    Content preview: {text_content[:200]}...")
+            
+            # Final check - reject if content is too short
+            if len(text_content) < 700:
+                print("    Rejecting article due to insufficient content")
+                return None, None, None
         
         # Extract title from h1 tag
         title_match = re.search(r'<h1[^>]*class="[^"]*entry-title[^"]*"[^>]*>(.*?)</h1>', content, re.S | re.I)
@@ -386,6 +418,7 @@ def extract_article_content(url):
                 publish_date = match.group(1).strip()
                 break
         
+        print(f"    Successfully extracted {len(text_content)} characters of content")
         return title, article_content, publish_date
         
     except Exception as e:
@@ -677,9 +710,11 @@ Examples:
     python actiontech_crawler.py --test-filter # Test filtering logic
 
 Content Download Features:
-    - Extracts content from HTML class="single-post-wrap entry-content" primarily
-    - Falls back to class="entry-content" and other content patterns
-    - Validates content length to avoid empty files
+    - Precisely targets div.single-post-wrap.entry-content container
+    - Uses intelligent nested div parsing for accurate content extraction
+    - Handles complex HTML structures with proper div nesting
+    - Includes fallback for different class order variations
+    - Validates content length and quality before saving
     - Converts HTML to clean Markdown format
     - Downloads all images referenced in articles
     - Updates image references to local paths (.img/ folder)
@@ -687,6 +722,8 @@ Content Download Features:
     - Generates individual .md files for each article
     - Skips existing files to avoid regeneration
     - Handles duplicate downloads efficiently
+    - Debug output shows extraction method used
+    - Optimized for reliable content extraction from target container
 
 Incremental Mode:
     - Tracks previously crawled articles
