@@ -291,13 +291,15 @@ def test_filtering():
         ("TiDB 架构设计", "ActionDB", "https://opensource.actionsky.com/012", False),                  # Should be excluded (both)
         ("MySQL核心模块详解", "MySQL核心模块揭秘", "https://opensource.actionsky.com/category/技术专栏/揭秘/345", True),  # Should be included (hard filter)
         ("MariaDB核心分析", "其他分类", "https://opensource.actionsky.com/category/技术专栏/揭秘/678", True),  # Should be included (hard filter overrides title filter)
+        ("图解MySQL架构", "图解 MySQL", "https://opensource.actionsky.com/category/技术专栏/mysql-picture/901", True),  # Should be included (hard filter)
+        ("TiDB图解分析", "其他分类", "https://opensource.actionsky.com/category/技术专栏/mysql-picture/234", True),  # Should be included (hard filter overrides title filter)
     ]
     
     print("\nTesting combined filtering logic:")
     for title, category, url, expected in combined_test_cases:
         result = should_include_post(title, category, url)
         status = "✓" if result == expected else "✗"
-        reason = "title" if not should_include_title(title) else "category" if not should_include_category(category) else "both" if not should_include_title(title) and not should_include_category(category) else "hard filter" if "技术专栏/揭秘" in url else "unknown"
+        reason = "title" if not should_include_title(title) else "category" if not should_include_category(category) else "both" if not should_include_title(title) and not should_include_category(category) else "hard filter" if "技术专栏/揭秘" in url or "技术专栏/mysql-picture" in url else "unknown"
         print(f"{status} '{title}' [{category}] -> {result} (expected: {expected})")
         if result != expected:
             print(f"    Reason: {reason} filter")
@@ -366,10 +368,16 @@ def should_include_post(title, category, url=None):
     Rules:
     - Must pass both title and category filters
     - Hard filter: Always include blogs from "MySQL核心模块揭秘" category (URL contains "技术专栏/揭秘")
+    - Hard filter: Always include blogs from "图解 MySQL" category (URL contains "技术专栏/mysql-picture")
     """
     # Hard filter: Always include MySQL core module articles
     if url and "技术专栏/揭秘" in url:
         print(f"  Hard filter: Including MySQL核心模块揭秘 article: {title}")
+        return True
+    
+    # Hard filter: Always include 图解 MySQL articles
+    if url and "技术专栏/mysql-picture" in url:
+        print(f"  Hard filter: Including 图解 MySQL article: {title}")
         return True
     
     return should_include_title(title) and should_include_category(category)
@@ -379,7 +387,8 @@ def main():
     """Main function to crawl ActionTech blog."""
     base_urls = [
         'https://opensource.actionsky.com/category/技术干货',
-        'https://opensource.actionsky.com/category/技术专栏/揭秘'  # MySQL核心模块揭秘 category
+        'https://opensource.actionsky.com/category/技术专栏/揭秘',  # MySQL核心模块揭秘 category
+        'https://opensource.actionsky.com/category/技术专栏/mysql-picture/'  # 图解 MySQL category
     ]
     output_dir = 'actiontech'
     output_file = os.path.join(output_dir, 'ActionTech技术干货.md')
