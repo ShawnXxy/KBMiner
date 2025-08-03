@@ -3,7 +3,7 @@
 MySQL crawler that coordinates both ActionTech and Alibaba crawlers.
 """
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from .actiontech_crawler import ActionTechCrawler
 from .ali_crawler import AliCrawler
@@ -35,7 +35,7 @@ class MySQLCrawler:
         
         self.logger.info("MySQL crawler initialized with ActionTech and Alibaba sources")
     
-    def crawl(self, sources: list = None, **kwargs) -> Dict[str, Any]:
+    def crawl(self, sources: Optional[list] = None, **kwargs) -> Dict[str, Any]:
         """
         Crawl MySQL content from specified sources.
         

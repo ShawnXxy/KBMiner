@@ -208,9 +208,9 @@ def print_results_summary(results: Dict[str, Any]) -> None:
     Args:
         results: Dictionary with crawling results
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("CRAWLING RESULTS SUMMARY")
-    print("="*60)
+    print("=", " " * 58, "=", sep="")
     
     summary = results.get('summary', {})
     total_articles = summary.get('total_articles', 0)
@@ -230,7 +230,7 @@ def print_results_summary(results: Dict[str, Any]) -> None:
             print(f"  ❌ Error: {source_results['error']}")
         else:
             articles = source_results.get('articles_processed', 0) or \
-                      source_results.get('filtered_articles', 0)
+                source_results.get('filtered_articles', 0)
             print(f"  ✅ Articles: {articles}")
             
             if 'markdown_file' in source_results:
@@ -240,7 +240,7 @@ def print_results_summary(results: Dict[str, Any]) -> None:
                 downloaded = source_results['articles_downloaded']
                 print(f"  📥 Downloaded: {downloaded}")
     
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
 
 
 def main() -> int:
@@ -281,7 +281,7 @@ def main() -> int:
         
         # Check if any source failed
         failed_sources = [s for s, r in results.items() 
-                         if s != 'summary' and 'error' in r]
+                          if s != 'summary' and 'error' in r]
         
         if failed_sources:
             logger.warning(f"Some sources failed: {failed_sources}")
@@ -296,6 +296,8 @@ def main() -> int:
     except Exception as e:
         logger = logging.getLogger("miner")
         logger.error(f"Unexpected error: {e}")
+        # Ensure log_level is defined before use
+        log_level = locals().get('log_level', 'INFO')
         if log_level == "DEBUG":
             import traceback
             traceback.print_exc()

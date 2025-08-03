@@ -157,7 +157,7 @@ class AliCrawler(BaseCrawler):
             raise
     
     def _write_complete_markdown_file(self, output_file: str, topic: str, 
-                                     month_links: List[str]) -> dict:
+                                      month_links: List[str]) -> dict:
         """Write complete markdown file with all months."""
         total_articles = 0
         filtered_articles = 0
@@ -189,7 +189,7 @@ class AliCrawler(BaseCrawler):
         return {'total_articles': total_articles, 'filtered_articles': filtered_articles}
     
     def _append_new_months_to_file(self, output_file: str, topic: str, 
-                                  new_months: List[str]) -> dict:
+                                   new_months: List[str]) -> dict:
         """Append only new months to existing markdown file."""
         total_articles = 0
         filtered_articles = 0

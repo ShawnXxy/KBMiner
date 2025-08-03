@@ -48,7 +48,7 @@ class ActionTechCrawler(BaseCrawler):
             'mysql核心模块揭秘', '图解 mysql'
         }
     
-    def should_include_content(self, title: str, category: str = "") -> bool:
+    def should_include_content(self, title: str, category: str = "", **kwargs) -> bool:
         """
         Determine if content should be included based on filtering rules.
         
@@ -245,7 +245,7 @@ class ActionTechCrawler(BaseCrawler):
             raise
     
     def _generate_markdown_file(self, articles: List[Tuple[str, str, str]], 
-                               incremental: bool) -> dict:
+                                incremental: bool) -> dict:
         """Generate markdown file with articles organized by category."""
         # Implementation details would be moved from original file
         # This is a placeholder for the actual implementation
