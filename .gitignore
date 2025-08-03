@@ -148,5 +148,7 @@ Thumbs.db
 logs/
 temp/
 cache/
-ali_monthly/.processed_months.txt
+.processed_months.txt
 FILTERING_SUMMARY.md
+test/
+.venv
