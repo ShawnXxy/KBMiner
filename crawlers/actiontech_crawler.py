@@ -22,7 +22,7 @@ class ActionTechCrawler(BaseCrawler):
     and keywords to focus on relevant database technology content.
     """
     
-    def __init__(self, output_dir: str = "my/actiontech"):
+    def __init__(self, output_dir: str = "kb/my/actiontech"):
         """Initialize ActionTech crawler."""
         super().__init__(
             name="ActionTech",
@@ -244,7 +244,7 @@ class ActionTechCrawler(BaseCrawler):
             self.logger.error(f"Error during ActionTech crawl: {e}")
             raise
     
-    def _generate_markdown_file(self, articles: List[Tuple[str, str, str]], 
+    def _generate_markdown_file(self, articles: List[Tuple[str, str, str]],
                                 incremental: bool) -> dict:
         """Generate markdown file with articles organized by category."""
         # Implementation details would be moved from original file

@@ -19,7 +19,7 @@ class AliCrawler(BaseCrawler):
     filtering out other database technologies to maintain focus.
     """
     
-    def __init__(self, output_dir: str = "my/ali_monthly"):
+    def __init__(self, output_dir: str = "kb/my/ali_monthly"):
         """Initialize Alibaba crawler."""
         super().__init__(
             name="Alibaba",
@@ -124,8 +124,25 @@ class AliCrawler(BaseCrawler):
             # Determine which months to process
             if incremental:
                 existing_months = self.load_processed_items(self.tracking_file)
-                new_months = [month for month in all_month_links if month not in existing_months]
-                self.logger.info(f"Processing {len(new_months)} new months (incremental mode)")
+                # Always include the latest month (first in the list) for re-processing
+                # Plus any newer months that haven't been processed
+                new_months = []
+                latest_month = None
+                if all_month_links:
+                    # Always add the latest month (first in list)
+                    latest_month = all_month_links[0]
+                    new_months.append(latest_month)
+                    
+                    # Add any other months that haven't been processed yet
+                    for month in all_month_links[1:]:
+                        if month not in existing_months:
+                            new_months.append(month)
+                    
+                    # Remove duplicates while preserving order
+                    seen = set()
+                    new_months = [m for m in new_months if not (m in seen or seen.add(m))]
+                
+                self.logger.info(f"Processing {len(new_months)} months in incremental mode (always including latest: {latest_month if latest_month else 'none'})")
             else:
                 new_months = all_month_links
                 self.logger.info(f"Processing all {len(new_months)} months (full mode)")
@@ -156,7 +173,7 @@ class AliCrawler(BaseCrawler):
             self.logger.error(f"Error during Alibaba crawl: {e}")
             raise
     
-    def _write_complete_markdown_file(self, output_file: str, topic: str, 
+    def _write_complete_markdown_file(self, output_file: str, topic: str,
                                       month_links: List[str]) -> dict:
         """Write complete markdown file with all months."""
         total_articles = 0
@@ -188,7 +205,7 @@ class AliCrawler(BaseCrawler):
         
         return {'total_articles': total_articles, 'filtered_articles': filtered_articles}
     
-    def _append_new_months_to_file(self, output_file: str, topic: str, 
+    def _append_new_months_to_file(self, output_file: str, topic: str,
                                    new_months: List[str]) -> dict:
         """Append only new months to existing markdown file."""
         total_articles = 0
