@@ -148,7 +148,7 @@ Thumbs.db
 logs/
 temp/
 cache/
-.processed_months.txt
+# Note: .processed_months.txt is now tracked in git as it represents website state
 FILTERING_SUMMARY.md
 test/
 .venv
