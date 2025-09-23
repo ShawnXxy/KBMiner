@@ -43,13 +43,17 @@ def create_argument_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  miner --source mysql                    # Crawl all MySQL sources
-  miner --source MySQL --incremental     # Incremental MySQL crawl
-  miner --source mysql --download         # Crawl and download content
-  miner --source mysql --test             # Test crawl with sample data
+  miner --source mysql                             # Crawl all MySQL sources (actiontech + ali_monthly)
+  miner --source mysql --incremental              # Incremental MySQL crawl (all sources)
+  miner --source mysql --asset actiontech         # Crawl only ActionTech source
+  miner --source mysql --asset ali_monthly        # Crawl only Alibaba monthly reports
+  miner --source mysql --asset actiontech ali_monthly  # Crawl both specific sources
+  miner --source mysql --download                 # Crawl and download content from all sources
+  miner --source mysql --test                     # Test crawl with sample data
   
 Supported Sources:
   MySQL - Crawls ActionTech and Alibaba database content
+    Assets: actiontech, ali_monthly (or 'all' for both)
         """
     )
     
@@ -116,11 +120,15 @@ Supported Sources:
     
     # Source-specific options
     parser.add_argument(
-        '--sources',
+        '--asset',
         nargs='+',
-        choices=['actiontech', 'alibaba', 'all'],
+        choices=['actiontech', 'ali_monthly', 'all'],
         default=['all'],
-        help='Specific sources to crawl within the selected category'
+        help='''Specific assets to crawl within the MySQL source. Options:
+        - actiontech: ActionTech technical blog posts
+        - ali_monthly: Alibaba database monthly reports
+        - all: Both actiontech and ali_monthly (default)
+        Can specify multiple assets: --asset actiontech ali_monthly'''
     )
     
     return parser
@@ -195,8 +203,18 @@ def crawl_mysql_sources(args: argparse.Namespace) -> Dict[str, Any]:
         crawler_params['test_mode'] = True
         crawler_params['incremental'] = True  # Safer for testing
     
-    # Determine which sources to crawl
-    sources = args.sources if 'all' not in args.sources else ['actiontech', 'alibaba']
+    # Determine which assets to crawl
+    assets = getattr(args, 'asset', ['all'])
+    if 'all' in assets:
+        sources = ['actiontech', 'alibaba']
+    else:
+        # Map ali_monthly to alibaba for internal crawler compatibility
+        sources = []
+        for asset in assets:
+            if asset == 'ali_monthly':
+                sources.append('alibaba')
+            else:
+                sources.append(asset)
     
     return crawler.crawl(sources=sources, **crawler_params)
 
@@ -280,7 +298,7 @@ def main() -> int:
         print_results_summary(results)
         
         # Check if any source failed
-        failed_sources = [s for s, r in results.items() 
+        failed_sources = [s for s, r in results.items()
                           if s != 'summary' and 'error' in r]
         
         if failed_sources:

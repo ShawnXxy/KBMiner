@@ -158,30 +158,6 @@ class BaseCrawler(ABC):
             self.logger.error(f"Failed to load tracking file {tracking_file}: {e}")
             return set()
     
-    def save_processed_item(self, tracking_file: str, item: str) -> bool:
-        """
-        Save a processed item to tracking file.
-        
-        Args:
-            tracking_file: Path to tracking file
-            item: Item identifier to save
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            os.makedirs(os.path.dirname(tracking_file), exist_ok=True)
-            
-            with open(tracking_file, 'a', encoding='utf-8') as f:
-                f.write(f"{item}\n")
-            
-            self.logger.debug(f"Saved processed item: {item}")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Failed to save to tracking file {tracking_file}: {e}")
-            return False
-    
     @abstractmethod
     def crawl(self, **kwargs) -> dict:
         """

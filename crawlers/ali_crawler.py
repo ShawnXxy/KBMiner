@@ -82,7 +82,7 @@ class AliCrawler(BaseCrawler):
     def extract_article_links(self, content: str) -> List[Tuple[str, str]]:
         """Extract article titles and links from monthly page content."""
         re_article_title_link = re.compile(
-            r'<a class="post-link" href="(.*?)".*?<strong>(.*?)</strong>', re.S
+            r'<a target="_top" class="main" href="(/monthly/.*?)">(.*?)</a>', re.S
         )
         all_articles = re.findall(re_article_title_link, content)
         
@@ -194,11 +194,16 @@ class AliCrawler(BaseCrawler):
                     if filtered_article_links:
                         f.write(f'### {month}\n---\n\n')
                         for article_link, article_title in filtered_article_links:
-                            full_link = self.base_url + article_link
+                            # Since article_link now includes full path, construct URL properly
+                            full_link = "http://mysql.taobao.org" + article_link
                             f.write(f'- [{article_title}]({full_link})\n')
                         f.write('\n')
-                    
-                    self.logger.info(f"Processed {month}: {len(filtered_article_links)} articles")
+                        
+                        # Only save processed month if there were actually articles written
+                        self.save_processed_month(month)
+                        self.logger.info(f"Processed {month}: {len(filtered_article_links)} articles (saved to tracking)")
+                    else:
+                        self.logger.info(f"Processed {month}: {len(filtered_article_links)} articles (no MySQL/InnoDB content, not tracking)")
                     
                 except Exception as e:
                     self.logger.warning(f"Could not process {month}: {e}")
@@ -230,13 +235,16 @@ class AliCrawler(BaseCrawler):
                     if filtered_article_links:
                         f.write(f'### {month}\n---\n\n')
                         for article_link, article_title in filtered_article_links:
-                            full_link = self.base_url + article_link
+                            # Since article_link now includes full path, construct URL properly
+                            full_link = "http://mysql.taobao.org" + article_link
                             f.write(f'- [{article_title}]({full_link})\n')
                         f.write('\n')
-                    
-                    # Save processed month
-                    self.save_processed_item(self.tracking_file, month)
-                    self.logger.info(f"Processed {month}: {len(filtered_article_links)} articles")
+                        
+                        # Only save processed month if there were actually articles written
+                        self.save_processed_month(month)
+                        self.logger.info(f"Processed {month}: {len(filtered_article_links)} articles (saved to tracking)")
+                    else:
+                        self.logger.info(f"Processed {month}: {len(filtered_article_links)} articles (no MySQL/InnoDB content, not tracking)")
                     
                 except Exception as e:
                     self.logger.warning(f"Could not process {month}: {e}")
@@ -254,3 +262,48 @@ class AliCrawler(BaseCrawler):
         # Placeholder for test download implementation
         self.logger.info(f"Testing download with {len(test_months)} months")
         return {'articles_downloaded': 0}
+    
+    def save_processed_month(self, month: str) -> bool:
+        """
+        Save a processed month to tracking file with proper date ordering.
+        
+        Args:
+            month: Month identifier in YYYY/MM format
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            os.makedirs(os.path.dirname(self.tracking_file), exist_ok=True)
+            
+            # Load existing months
+            existing_months = []
+            if os.path.exists(self.tracking_file):
+                with open(self.tracking_file, 'r', encoding='utf-8') as f:
+                    existing_months = [line.strip() for line in f if line.strip()]
+            
+            # Add new month if not already present
+            if month not in existing_months:
+                existing_months.append(month)
+            
+            # Sort by date (latest first)
+            def sort_key(month_str):
+                try:
+                    year, month_num = month_str.split('/')
+                    return (int(year), int(month_num))
+                except (ValueError, IndexError):
+                    return (0, 0)
+            
+            existing_months.sort(key=sort_key, reverse=True)
+            
+            # Write back to file
+            with open(self.tracking_file, 'w', encoding='utf-8') as f:
+                for m in existing_months:
+                    f.write(f"{m}\n")
+            
+            self.logger.debug(f"Saved processed month: {month} (latest: {existing_months[0] if existing_months else 'none'})")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save processed month {month}: {e}")
+            return False
