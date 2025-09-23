@@ -1,212 +1,317 @@
-# KBMiner - Knowledge Base Mining Tool
+<a id="readme-top"></a>
 
-> A unified command-line tool for crawling technical content from various sources
+<!-- LANGUAGE SWITCH -->
+---
 
-## 📚 Overview
 
-KBMiner provides a unified interface to crawl and organize technical content from multiple sources. Currently supports MySQL-related content from ActionTech and Alibaba database monthly reports.
 
-## 🚀 Quick Start
+<!-- PROJECT LOGO -->
+<br />
+<div align="center">
+  <!-- <a href="https://github.com/ShawnXxy/KBMiner">
+    <img src="images/logo.png" alt="Logo" width="25%" height="auto">
+  </a> -->
+
+<h3 align="center">KBMiner</h3>
+
+  <p align="center">
+    KBMiner is a command-line tool for automatically crawling, filtering, indexing, and archiving MySQL-related technical articles from ActionTech and Alibaba's official sources. Built in Python with a modular, extensible crawler framework, it supports incremental and full crawls, keyword-based filtering, Markdown indexing, HTML-to-Markdown conversion, and robust state management for resumable operations. The tool provides unified, customizable mining of technical knowledge base content for database professionals.
+    <br />
+    <a href="https://github.com/ShawnXxy/KBMiner"><strong>Explore the docs »</strong></a>
+    <br />
+  </p>
+
+  <!-- PROJECT SHIELDS -->
+[![Contributors][contributors-shield]][contributors-url]
+[![Forks][forks-shield]][forks-url]
+[![Stargazers][stars-shield]][stars-url]
+[![Issues][issues-shield]][issues-url]
+<!-- [![Latest Release][release-shield]][release-url]
+![Release Date][release-date-shield] -->
+[![License][license-shield]][license-url]
+
+  <p align="center">
+    <a href="https://github.com/ShawnXxy/KBMiner">View Demo</a>
+    &middot;
+    <a href="https://github.com/ShawnXxy/KBMiner/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    &middot;
+    <a href="https://github.com/ShawnXxy/KBMiner/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+  </p>
+</div>
+
+
+
+<!-- TABLE OF CONTENTS -->
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+    <li><a href="#acknowledgments">Acknowledgments</a></li>
+  </ol>
+</details>
+
+
+
+<!-- ABOUT THE PROJECT -->
+## 📖 About The Project
+
+[![Flow Chart](images/flow.png)](https://example.com)
+
+KBMiner is a command-line tool for automatically crawling, filtering, indexing, and archiving MySQL-related technical articles from ActionTech and Alibaba's official sources. Built in Python with a modular, extensible crawler framework, it supports incremental and full crawls, keyword-based filtering, Markdown indexing, HTML-to-Markdown conversion, and robust state management for resumable operations. The tool provides unified, customizable mining of technical knowledge base content for database professionals.
+
+### Key Features
+
+- **Unified multi-source crawling:** Aggregates MySQL-related content from both ActionTech and Alibaba sources through a single interface.
+- **Incremental & full crawl support:** Choose between updating only new/uncompleted items or rebuilding the entire index from scratch.
+- **Keyword-based content filtering:** Includes/excludes articles based on title and category keywords for precise topic targeting.
+- **Markdown article indexing:** Organizes collected articles in Markdown files, categorized by source and time, for easy browsing.
+- **Local article downloading & conversion:** Downloads full article content and converts HTML to Markdown, saving it locally alongside referenced images.
+- **Robust logging & error handling:** Detailed logs, error resilience, and resumable state management for reliable operation.
+- **Extensible crawler architecture:** Modular design allows easy extension to new sources or custom filtering and output logic.
+- **Portable & dependency-free:** Relies solely on the Python standard library—no external packages required.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+### Built With
+
+* [![Python][Python]][Python-url]
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+### 📁 Project Structure
+
+<details>
+<summary>Click to expand project structure</summary>
+
+```
+KBMiner/
+├── .flake8
+├── .gitignore
+├── miner.py
+├── crawlers/
+│   ├── actiontech_crawler.py
+│   ├── ali_crawler.py
+│   ├── base_crawler.py
+│   ├── mysql_crawler.py
+├── kb/
+│   ├── my/
+│   │   ├── actiontech/
+│   │   │   ├── crawl_state.json
+│   │   │   ├── articles/
+│   │   │   │   ├── .img/
+│   │   ├── ali_monthly/
+│   │   │   ├── .processed_months.txt
+│   │   │   ├── articles/
+│   │   │   │   ├── .img/
+│   │   ├── my_manual/
+│   │   │   ├── refman-5.7-en.pdf
+│   │   │   ├── refman-8.0-en.pdf
+│   │   │   ├── refman-8.4-en.pdf
+│   │   │   ├── docs_md/
+│   │   │   │   ├── 57/
+│   │   │   │   ├── 80/
+│   │   │   │   ├── 84/
+```
+
+</details>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- GETTING STARTED -->
+## 🚀 Getting Started
+
+This is an example of how you may give instructions on setting up your project locally. To get a local copy up and running follow these simple steps.
+
+### Prerequisites
+
+- Python 3.7 or above (standard library only; no external dependencies)
+- Stable internet connection (required for crawling source websites)
+- Sufficient disk space (knowledge base directories can grow large due to article and image storage)
 
 ### Installation
 
-```bash
-git clone https://github.com/ShawnXxy/KBminer.git
-cd KBminer
-```
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/ShawnXxy/KBMiner.git
+   cd KBMiner
+   ```
 
-### Basic Usage
+2. **(Optional) Set up a virtual environment:**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-```bash
-# Crawl all MySQL sources
-python miner.py --source mysql
+3. **No further installation is required. KBMiner does not rely on external packages.**
 
-# Incremental crawl (recommended for regular updates)
-python miner.py --source mysql --incremental
+### Configuration
 
-# Crawl with content download
-python miner.py --source mysql --download
+- By default, the knowledge base and downloaded articles will be stored within the `kb/my/` directory.
+- You can customize crawl options (incremental/full, source selection, etc.) at runtime via command-line arguments.
+- For best results, review the `miner.py` script and the output structure in `kb/my/` to understand how content is organized.
 
-# Test mode with limited content
-python miner.py --source mysql --test
-```
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-## 💡 Features
 
-### Unified Command Interface
-- Single `miner` command for all sources
-- Case-insensitive source selection
-- Comprehensive help and validation
 
-### Smart Content Filtering
-- **ActionTech**: Filters by categories and keywords to focus on MySQL/database content
-- **Alibaba**: Includes only MySQL/InnoDB articles, excludes PolarDB, MariaDB, etc.
+<!-- USAGE EXAMPLES -->
+## 💻 Usage
 
-### Incremental Processing
-- Tracks processed content to avoid duplicates
-- Only processes new articles on subsequent runs
-- Efficient for automated/scheduled crawling
-
-### Flexible Options
-- **Test mode**: Validate functionality with limited content
-- **Download mode**: Fetch full article content in addition to indexes
-- **Verbose logging**: Debug and monitor crawling progress
-- **Source selection**: Choose specific sources or crawl all
-
-## 📖 Command Reference
-
-### Required Arguments
-```bash
---source, -s {mysql,MySQL,MYSQL}    # Source to crawl (case-insensitive)
-```
-
-### Crawling Modes
-```bash
---incremental, -i      # Only process new content (recommended)
---full, -f            # Process all content, ignore existing
---download, -d        # Download full article content
---download-only       # Only download existing articles, no new crawling
-```
-
-### Testing & Debugging
-```bash
---test, -t            # Test mode with limited content
---test-articles       # Test article download functionality
---verbose, -v         # Enable debug logging
---quiet, -q          # Reduce output to warnings only
-```
-
-### Source Control
-```bash
---sources {actiontech,alibaba,all}  # Specific sources within category
-```
-
-## 📁 Output Structure
-
-```
-my/
-├── actiontech/                     # ActionTech content
-│   ├── ActionTech技术干货.md        # Main index file
-│   ├── crawl_state.json           # Incremental tracking
-│   └── articles/                  # Individual articles (with --download)
-└── ali_monthly/                   # Alibaba content
-    ├── 阿里数据库内核月报.md         # Main index file
-    ├── .processed_months.txt      # Incremental tracking
-    └── articles/                  # Individual articles (with --download)
-```
-
-## 🎯 Content Sources
-
-### MySQL Sources
-- **ActionTech**: Technical blog posts focused on database technologies
-- **Alibaba**: Monthly database kernel reports with MySQL/InnoDB insights
-
-## 📊 Statistics
-
-| Source | Articles | Focus | Update Frequency |
-|--------|----------|-------|------------------|
-| ActionTech | 600+ | Practical MySQL/DB content | Active |
-| Alibaba | 450+ | Deep MySQL/InnoDB technical articles | Monthly |
-
-## 🔧 Advanced Usage
-
-### Automated Scheduling
-
-#### Linux/macOS (crontab)
-```bash
-# Daily incremental update at 8 AM
-0 8 * * * cd /path/to/KBminer && python miner.py --source mysql --incremental --quiet
-```
-
-#### Windows (Task Scheduler)
-- Create basic task for daily execution
-- Program: `python`
-- Arguments: `miner.py --source mysql --incremental --quiet`
-- Start in: `C:\path\to\KBminer`
-
-### Customization
-
-The crawler behavior can be customized by modifying the crawler classes in the `crawlers/` directory:
-
-- `crawlers/actiontech_crawler.py` - ActionTech filtering rules
-- `crawlers/ali_crawler.py` - Alibaba filtering rules
-- `crawlers/mysql_crawler.py` - MySQL meta-crawler coordination
-
-## 🛠️ Technical Details
-
-### Architecture
-- **Object-oriented design** with inheritance and composition
-- **High cohesion, low coupling** following SOLID principles
-- **Modular crawler system** for easy extension
-- **Comprehensive logging** for debugging and monitoring
-
-### Key Classes
-- `BaseCrawler`: Abstract base class with common functionality
-- `ActionTechCrawler`: ActionTech-specific implementation
-- `AliCrawler`: Alibaba monthly reports implementation
-- `MySQLCrawler`: Meta-crawler coordinating MySQL sources
-
-### Error Handling
-- Graceful failure handling - one source failure doesn't stop others
-- Comprehensive logging with configurable levels
-- Automatic retry and recovery mechanisms
-- Validation of command-line arguments
-
-## 🚦 Examples
-
-### Basic Crawling
-```bash
-# First-time full crawl
-python miner.py --source mysql
-
-# Regular incremental updates
-python miner.py --source mysql --incremental
-```
-
-### Content Download
-```bash
-# Crawl and download full articles
-python miner.py --source mysql --download
-
-# Download articles from existing indexes only
-python miner.py --source mysql --download-only
-```
-
-### Testing and Debugging
-```bash
-# Test with verbose logging
-python miner.py --source mysql --test --verbose
-
-# Test specific sources
-python miner.py --source mysql --test --sources actiontech
-
-# Quiet mode for automated scripts
-python miner.py --source mysql --incremental --quiet
-```
-
-## 🔮 Future Extensions
-
-The architecture supports easy addition of new sources:
+The main entry point is `miner.py`. Run it directly with Python:
 
 ```bash
-# Future possibilities
-python miner.py --source postgresql    # PostgreSQL content
-python miner.py --source mongodb      # MongoDB content
-python miner.py --source redis        # Redis content
+python miner.py [OPTIONS]
 ```
 
+**Common options:**
+
+- `--asset {actiontech,ali_monthly,all}` : Select which source(s) to crawl (`all` is default).
+- `--full` : Force a full crawl (rebuild the entire index from scratch).
+- `--incremental` : Only update new/uncompleted articles (default behavior).
+- `--download` : Download full article content and save locally.
+- `--download-only` : Only download articles for already indexed entries.
+- `--test` : Run in test mode with limited crawling (for safe/quick checks).
+- `--test-articles N` : Only process the first N articles for testing.
+- `--verbose` / `--quiet` : Control logging output level.
+
+**Examples:**
+
+- Incremental crawl both sources, index only (no download):
+  ```bash
+  python miner.py --asset all --incremental
+  ```
+
+- Full crawl and download for ActionTech only:
+  ```bash
+  python miner.py --asset actiontech --full --download
+  ```
+
+- Download missing articles for Alibaba monthly, skipping crawl:
+  ```bash
+  python miner.py --asset ali_monthly --download-only
+  ```
+
+- Run a test crawl of 5 articles from both sources:
+  ```bash
+  python miner.py --test-articles 5
+  ```
+
+**Resulting files and articles will appear in the respective directories under `kb/my/`. Logs and summaries are printed to the console.**
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- ROADMAP -->
+## 🗺️ Roadmap
+
+- [x] Unified multi-source crawling (ActionTech, Alibaba)
+- [x] Incremental and full crawl support
+- [x] Markdown index generation and organization by category/month
+- [x] Article content download and HTML-to-Markdown conversion
+- [x] Robust keyword-based filtering (allow/deny lists)
+- [x] Logging, error handling, and resumable state management
+- [ ] Support for additional knowledge base sources (future)
+- [ ] Configurable output locations and advanced filtering
+- [ ] Web or GUI front-end for browsing archived articles
+
+See the [open issues](https://github.com/ShawnXxy/KBMiner/issues) for a full list of proposed features (and known issues).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- CONTRIBUTING -->
 ## 🤝 Contributing
 
-1. Follow the object-oriented design patterns
-2. Inherit from `BaseCrawler` for new sources
-3. Add comprehensive logging and error handling
-4. Include filtering logic appropriate for the source
-5. Update this README with new features
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
 
-## 📄 License
+If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
+Don't forget to give the project a star! Thanks again!
 
-This project is open source and available under the MIT License.
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
----
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-**Built with Python 3** | **No external dependencies** | **Cross-platform compatible**
+### Top contributors:
+
+<a href="https://github.com/ShawnXxy/KBMiner/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ShawnXxy/KBMiner" alt="contrib.rocks image" />
+</a>
+
+
+
+<!-- LICENSE -->
+## 🎗 License
+
+Copyright © 2024-2025 [KBMiner][KBMiner].  
+Released under the [MIT][license-url] license.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- CONTACT -->
+## 📧 Contact
+
+Email: your.email@example.com
+
+Project Link: [https://github.com/ShawnXxy/KBMiner](https://github.com/ShawnXxy/KBMiner)
+
+This project is designed to operate without external Python dependencies, relying solely on the standard library, making it highly portable and easy to set up. For best results, ensure you have stable internet connectivity during crawling, and note that the knowledge base directories can grow significantly in size due to the storage of article content and images.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+
+
+
+
+<!-- REFERENCE LINKS -->
+[KBMiner]: https://github.com/ShawnXxy/KBMiner
+
+<!-- MARKDOWN LINKS & IMAGES -->
+[contributors-shield]: https://img.shields.io/github/contributors/ShawnXxy/KBMiner.svg?style=flat-round
+[contributors-url]: https://github.com/ShawnXxy/KBMiner/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/ShawnXxy/KBMiner.svg?style=flat-round
+[forks-url]: https://github.com/ShawnXxy/KBMiner/network/members
+[stars-shield]: https://img.shields.io/github/stars/ShawnXxy/KBMiner.svg?style=flat-round
+[stars-url]: https://github.com/ShawnXxy/KBMiner/stargazers
+[issues-shield]: https://img.shields.io/github/issues/ShawnXxy/KBMiner.svg?style=flat-round
+[issues-url]: https://github.com/ShawnXxy/KBMiner/issues
+[release-shield]: https://img.shields.io/github/v/release/ShawnXxy/KBMiner?style=flat-round
+[release-url]: https://github.com/ShawnXxy/KBMiner/releases
+[release-date-shield]: https://img.shields.io/github/release-date/ShawnXxy/KBMiner?color=9cf&style=flat-round
+[license-shield]: https://img.shields.io/github/license/ShawnXxy/KBMiner.svg?style=flat-round
+[license-url]: https://github.com/ShawnXxy/KBMiner/blob/master/LICENSE.txt
+
+[Python]: https://img.shields.io/badge/Python-3776AB?style=flat-round&logo=python&logoColor=white
+[Python-url]: https://www.python.org/
