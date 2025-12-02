@@ -32,7 +32,8 @@ class AliCrawler(BaseCrawler):
         # Filtering configuration
         self.exclusion_keywords = [
             'polardb', 'plardb', 'mariadb', 'tokudb', 'myrocks',
-            'rocksdb', 'hybriddb', 'x-engine', '行业动态', '行业洞察', '社区见闻'
+            'rocksdb', 'hybriddb', 'x-engine', '行业动态', '行业洞察', '社区见闻',
+            'greenplum'
         ]
     
     def should_include_content(self, title: str, **kwargs) -> bool:

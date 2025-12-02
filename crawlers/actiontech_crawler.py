@@ -36,7 +36,7 @@ class ActionTechCrawler(BaseCrawler):
         self.title_exclude_keywords = {
             'mariadb', 'scaleflux', 'tidb', 'ob运维', 'clickhouse',
             '行业趋势', 'obclient', 'oceanbase', 'kubernetes',
-            'mongodb', 'orchestrator', 'redis', 'Greenplum'
+            'mongodb', 'orchestrator', 'redis', 'greenplum'
         }
         
         self.category_exclude_keywords = {
